@@ -15,12 +15,6 @@ async function main() {
   const contractAddress = await medicalRecords.getAddress();
   console.log("✅ MedicalRecords deployed to:", contractAddress);
 
-  // Initialize the contract
-  console.log("\n🔧 Initializing contract...");
-  const initTx = await medicalRecords.initialize();
-  await initTx.wait();
-  console.log("✅ Contract initialized");
-
   // Get deployment info
   const [deployer] = await hre.ethers.getSigners();
   console.log("\n📋 Deployment Summary:");
@@ -30,17 +24,8 @@ async function main() {
   console.log("Deployer Address:", deployer.address);
   console.log("=======================\n");
 
-  // Setup initial roles
-  console.log("🔐 Setting up initial roles...");
-  const ADMIN_ROLE = await medicalRecords.ADMIN_ROLE();
-  const DOCTOR_ROLE = await medicalRecords.DOCTOR_ROLE();
-  const PATIENT_ROLE = await medicalRecords.PATIENT_ROLE();
-
-  console.log("ADMIN_ROLE:", ADMIN_ROLE);
-  console.log("DOCTOR_ROLE:", DOCTOR_ROLE);
-  console.log("PATIENT_ROLE:", PATIENT_ROLE);
-
   // Verify on block explorer (if on testnet)
+  const network = await hre.ethers.provider.getNetwork();
   if (network.name !== "localhost" && network.name !== "hardhat") {
     console.log("\n📡 Verify on block explorer:");
     console.log(
@@ -56,11 +41,6 @@ async function main() {
     deployerAddress: deployer.address,
     deploymentBlock: (await hre.ethers.provider.getBlockNumber()),
     deploymentDate: new Date().toISOString(),
-    roles: {
-      ADMIN_ROLE,
-      DOCTOR_ROLE,
-      PATIENT_ROLE,
-    },
   };
 
   fs.writeFileSync(

@@ -2,7 +2,7 @@ require("@nomicfoundation/hardhat-toolbox");
 require("@nomicfoundation/hardhat-chai-matchers");
 require("@openzeppelin/hardhat-upgrades");
 
-const POLYGON_MUMBAI_RPC = process.env.POLYGON_MUMBAI_RPC || "https://rpc-mumbai.maticvigil.com";
+const POLYGON_AMOY_RPC = process.env.POLYGON_AMOY_RPC || "https://rpc-amoy.polygon.technology";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 module.exports = {
@@ -19,8 +19,8 @@ module.exports = {
     localhost: {
       url: "http://127.0.0.1:8545",
     },
-    polygonMumbai: {
-      url: POLYGON_MUMBAI_RPC,
+    polygonAmoy: {
+      url: POLYGON_AMOY_RPC,
       accounts: [PRIVATE_KEY],
     },
   },
