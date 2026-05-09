@@ -21,7 +21,12 @@ export default function App() {
 
   const renderPage = () => {
     switch (activePage) {
-      case "dashboard": return <Dashboard />;
+      case "dashboard":
+  return (
+    <Dashboard
+      setActivePage={setActivePage}
+    />
+  );
       case "upload": return <UploadRecord />;
       case "access": return <AccessControl />;
       case "audit": return <AuditLogs />;

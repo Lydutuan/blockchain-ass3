@@ -1,5 +1,9 @@
 import { useState } from "react";
+import type { PageKey } from "../App";
 
+type Props = {
+  setActivePage: (page: PageKey) => void;
+};
 // ── Types ──────────────────────────────────────────────────────────────────
 interface MedicalRecord {
   id: string; cid: string; patient: string;
@@ -92,7 +96,9 @@ const Btn = ({ children, onClick, variant = "primary", style = {} }: any) => {
 };
 
 // ── Dashboard (distinctive content only) ───────────────────────────────────
-export default function Dashboard() {
+export default function Dashboard({
+  setActivePage,
+}: Props) {
   const [search, setSearch] = useState("");
   const [perms, setPerms] = useState(PERMISSIONS);
 
@@ -116,7 +122,12 @@ export default function Dashboard() {
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <Btn variant="ghost">🔔 Alerts</Btn>
-          <Btn variant="primary">+ Upload Record</Btn>
+          <Btn
+  variant="primary"
+  onClick={() => setActivePage("upload")}
+>
+  + Upload Record
+</Btn>
         </div>
       </div>
 
@@ -160,7 +171,7 @@ export default function Dashboard() {
       {/* Records */}
       <Card style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>📁 Medical Records</h2>
+          <h2 style={{ fontSize: 19, fontWeight: 700, margin: 0, color: "#6b20a8" }}>Medical Records</h2>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input
               value={search}
@@ -227,15 +238,27 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px" }}>⚡ Quick Actions</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "#71318f" }}>Quick Actions</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 , }}>
             {[
-              { label: "Upload New Record", v: "primary" },
-              { label: "Grant Access", v: "success" },
-              { label: "View Audit Logs", v: "outline" },
-              { label: "Verify Medicine", v: "ghost" },
+              { label: "Upload New Record", v: "primary", page: "upload" },
+              { label: "Grant Access", v: "success", page: "access" },
+              { label: "View Audit Logs", v: "outline", page: "audit" },
+              { label: "Verify Medicine", v: "ghost", page: "medicine" },
             ].map((a) => (
-              <Btn key={a.label} variant={a.v} style={{ width: "100%", padding: "10px 16px", textAlign: "left", fontSize: 13 }}>{a.label}</Btn>
+              <Btn
+            key={a.label}
+            variant={a.v}
+            onClick={() => setActivePage(a.page)}
+            style={{
+            width: "100%",
+            padding: "10px 16px",
+            textAlign: "left",
+            fontSize: 13
+        }}
+>
+  {a.label}
+</Btn>
             ))}
           </div>
           <div style={{ marginTop: 20, padding: "12px 14px", borderRadius: 10, background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.15)" }}>
