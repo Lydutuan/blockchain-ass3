@@ -30,8 +30,6 @@ npm run deploy:localhost
 📝 Deploying MedicalRecords contract...
 ✅ MedicalRecords deployed to: 0x5FbDB2315678afccb333f8a9c4662ce232609e0a
 
-🔧 Initializing contract...
-✅ Contract initialized
 
 📋 Deployment Summary:
 =======================
@@ -67,7 +65,7 @@ Run with:
 npx hardhat run interact.js --network localhost
 ```
 
-## Polygon Mumbai Testnet Deployment
+## Polygon Amoy Testnet Deployment
 
 ### Step 1: Setup Accounts
 
@@ -77,9 +75,9 @@ npx hardhat run interact.js --network localhost
    ```
    Or use an existing testnet account.
 
-2. **Get Mumbai Faucet ETH**
+2. **Get Amoy Faucet ETH**
    - Visit: https://faucet.polygon.technology/
-   - Select "Mumbai"
+   - Select "Amoy"
    - Enter your wallet address
    - Wait for ETH to arrive
 
@@ -90,11 +88,11 @@ npx hardhat run interact.js --network localhost
    
    Edit `.env`:
    ```
-   POLYGON_MUMBAI_RPC=https://rpc-mumbai.maticvigil.com
+   POLYGON_AMOY_RPC=https://rpc-amoy.polygon.technology
    PRIVATE_KEY=0x... (your testnet private key)
    ```
 
-### Step 2: Deploy to Mumbai
+### Step 2: Deploy to Amoy
 
 ```bash
 npm run deploy:polygon
@@ -107,18 +105,15 @@ npm run deploy:polygon
 📝 Deploying MedicalRecords contract...
 ✅ MedicalRecords deployed to: 0xAbCd123EF456...
 
-🔧 Initializing contract...
-✅ Contract initialized
-
-📋 Deployment Summary:
+ Deployment Summary:
 =======================
-Network: polygonMumbai
+Network: polygonAmoy
 Contract Address: 0xAbCd123EF456...
 Deployer Address: 0x1234...
 =======================
 
 📡 Verify on block explorer:
-npx hardhat verify --network polygonMumbai 0xAbCd123EF456...
+npx hardhat verify --network polygonAmoy 0xAbCd123EF456...
 ```
 
 ### Step 3: Verify Contract
@@ -136,18 +131,18 @@ module.exports = {
   // ... other config
   etherscan: {
     apiKey: {
-      polygonMumbai: ETHERSCAN_API_KEY
+      polygonAmoy: ETHERSCAN_API_KEY
     }
   }
 };
 
 # Verify
-npx hardhat verify --network polygonMumbai <CONTRACT_ADDRESS>
+npx hardhat verify --network polygonAmoy <CONTRACT_ADDRESS>
 ```
 
 #### Manual Verification
 
-1. Go to: https://mumbai.polygonscan.com/
+1. Go to: https://amoy.polygonscan.com/
 2. Search for contract address
 3. Click "Contract" tab
 4. Click "Verify and Publish"
@@ -162,29 +157,7 @@ npx hardhat verify --network polygonMumbai <CONTRACT_ADDRESS>
 
 After deployment/verification:
 ```
-https://mumbai.polygonscan.com/address/0x<YOUR_CONTRACT_ADDRESS>
-```
-
-## Contract Initialization After Deployment
-
-After deployment, the contract is automatically initialized. To manually initialize:
-
-```javascript
-const hre = require("hardhat");
-
-async function main() {
-  const contractAddress = "0x..."; // Your deployed address
-  const MedicalRecords = await hre.ethers.getContractFactory("MedicalRecords");
-  const contract = MedicalRecords.attach(contractAddress);
-  
-  // Initialize
-  const tx = await contract.initialize();
-  await tx.wait();
-  
-  console.log("Contract initialized");
-}
-
-main();
+https://amoy.polygonscan.com/address/0x<YOUR_CONTRACT_ADDRESS>
 ```
 
 ## Setup Roles
