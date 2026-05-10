@@ -105,8 +105,8 @@ export default function UploadRecord() {
               onDrop={onDrop}
               onClick={() => inputRef.current?.click()}
               style={{
-                border: `2px dashed ${dragOver ? PURPLE : "#cbd5e1"}`,
-                background: dragOver ? PURPLE_SOFT : "#f8fafc",
+                border: `2px dashed ${dragOver ? PURPLE : "#a992bb"}`,
+                background: dragOver ? PURPLE_SOFT : "#ede5f0",
                 borderRadius: 12,
                 padding: "36px 20px",
                 textAlign: "center",
@@ -325,7 +325,7 @@ function Card({
         background: "#fff",
         borderRadius: 14,
         padding: 20,
-        border: "1px solid #e2e8f0",
+        border: "1px solid #9068a3",
         boxShadow: "0 1px 2px rgba(15,23,42,.04)",
       }}
     >
@@ -428,7 +428,7 @@ function Spinner() {
         display: "inline-block",
         width: 14,
         height: 14,
-        border: "2px solid rgba(255,255,255,.4)",
+        border: "2px solid rgba(234, 219, 238, 0.4)",
         borderTopColor: "#fff",
         borderRadius: "50%",
         animation: "spin 0.8s linear infinite",

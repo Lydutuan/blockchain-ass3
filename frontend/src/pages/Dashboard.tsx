@@ -70,7 +70,7 @@ const Badge = ({ status }: { status: string }) => {
 };
 
 const Card = ({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) => (
-  <div style={{ background: "#fff", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #f1f5f9", ...style }}>
+  <div style={{ background: "#fff", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #9773ac", ...style }}>
     {children}
   </div>
 );
@@ -249,7 +249,7 @@ export default function Dashboard({
               <Btn
             key={a.label}
             variant={a.v}
-            onClick={() => setActivePage(a.page)}
+            onClick={() => setActivePage(a.page as PageKey)}
             style={{
             width: "100%",
             padding: "10px 16px",
@@ -274,7 +274,13 @@ export default function Dashboard({
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "#722496"}}>Recent Audit Logs</h2>
-          <Btn variant="ghost" style={{ fontSize: 12 }}>View All →</Btn>
+          <Btn
+          variant="ghost"
+          style={{ fontSize: 12 }}
+          onClick={() => setActivePage("audit")}
+          >
+          View All →
+          </Btn>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
           {LOGS.map((l, i) => (
