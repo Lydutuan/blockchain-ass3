@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { PageKey } from "../App";
-
+import { getContract }
+from "../blockchain/contract";
 type Props = {
   setActivePage: (page: PageKey) => void;
 };
@@ -17,6 +18,36 @@ interface AuditLog {
   id: string; action: string; actor: string;
   target: string; timestamp: string; type: "upload" | "grant" | "revoke" | "view";
 }
+
+const testContract = async () => {
+  try {
+    const contract = await getContract();
+
+    console.log(contract);
+
+    alert("Contract Connected!");
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+const addTestRecord = async () => {
+  try {
+    const contract = await getContract();
+
+    const tx = await contract.addRecord(
+      "QmTestCID123456789"
+    );
+
+    console.log(tx);
+
+    await tx.wait();
+
+    alert("Record Added!");
+  } catch (err) {
+    console.error(err);
+  }
+};
 
 // ── Mock Data ──────────────────────────────────────────────────────────────
 const RECORDS: MedicalRecord[] = [
@@ -302,6 +333,16 @@ export default function Dashboard({
           ))}
         </div>
       </Card>
+      <button onClick={testContract}>
+  Test Smart Contract
+</button>
+<Btn
+  variant="success"
+  onClick={addTestRecord}
+  style={{ marginTop: 10 }}
+>
+  Add Test Record
+</Btn>
     </>
   );
 }
