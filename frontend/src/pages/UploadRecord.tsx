@@ -1,9 +1,12 @@
 import { useState, useRef } from "react";
 import type { ChangeEvent, DragEvent } from "react";
+import axios from "axios";
+import { getContract } from "../blockchain/contract";
+
 
 type RecordType = "lab" | "prescription" | "scan" | "insurance" | "other";
 
-const PURPLE = "#8e64d1";
+const PURPLE = "#6d28d9"; // solid main color (matches MediLedger logo) — no gradient
 const PURPLE_DARK = "#5b21b6";
 const PURPLE_SOFT = "#f3e8ff";
 
@@ -57,36 +60,78 @@ export default function UploadRecord() {
     handleFiles(e.dataTransfer.files);
   };
 
-  const simulateUpload = async () => {
-    if (!file || !title.trim()) {
-      alert("Please add a file and a record title.");
-      return;
-    }
-    setSuccess(false);
-    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const uploadRecord = async () => {
+  if (!file || !title.trim()) {
+    alert("Please add a file and a record title.");
+    return;
+  }
 
+  try {
+    setSuccess(false);
+
+    // STEP 1 — Encrypting UI
     setStage("encrypting");
-    await wait(900);
+    await new Promise((r) => setTimeout(r, 800));
+
+    // STEP 2 — Upload to IPFS
     setStage("ipfs");
-    await wait(1100);
-    const mockCid = "bafybeih" + Math.random().toString(36).slice(2, 10) + "kqz4y";
-    setCid(mockCid);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    // PINATA
+    const pinataRes = await axios.post(
+      "https://api.pinata.cloud/pinning/pinFileToIPFS",
+      formData,
+      {
+        maxBodyLength: Infinity,
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer YOUR_PINATA_JWT`,
+        },
+      }
+    );
+
+    const uploadedCid = pinataRes.data.IpfsHash;
+
+    setCid(uploadedCid);
+
+    // STEP 3 — Blockchain transaction
     setStage("tx");
-    await wait(1000);
-    setTxHash("0x" + Math.random().toString(16).slice(2, 10) + "...c2a9");
+
+    const contract = await getContract();
+
+    const tx = await contract.addRecord(uploadedCid);
+
+    setTxHash(tx.hash);
+
+    await tx.wait();
+
+    // STEP 4 — Success
     setStage("done");
     setSuccess(true);
-    setTimeout(() => setStage("idle"), 600);
-  };
+
+    setTimeout(() => {
+      setStage("idle");
+    }, 1000);
+
+  } catch (err) {
+    console.error(err);
+
+    alert("Upload failed.");
+
+    setStage("idle");
+  }
+};
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto" }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, color: "#5b2674", margin: 0 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, color: "#0f172a", margin: 0 }}>
           Upload Medical Record
         </h1>
-        <p style={{ color: "#64748b", marginTop: 6, fontSize: 16 }}>
+        <p style={{ color: "#64748b", marginTop: 6, fontSize: 14 }}>
           Securely upload encrypted healthcare documents to IPFS and register metadata on Polygon.
         </p>
       </div>
@@ -105,8 +150,8 @@ export default function UploadRecord() {
               onDrop={onDrop}
               onClick={() => inputRef.current?.click()}
               style={{
-                border: `2px dashed ${dragOver ? PURPLE : "#a992bb"}`,
-                background: dragOver ? PURPLE_SOFT : "#ede5f0",
+                border: `2px dashed ${dragOver ? PURPLE : "#cbd5e1"}`,
+                background: dragOver ? PURPLE_SOFT : "#f8fafc",
                 borderRadius: 12,
                 padding: "36px 20px",
                 textAlign: "center",
@@ -202,7 +247,7 @@ export default function UploadRecord() {
           {/* Upload Button */}
           <button
             disabled={isUploading}
-            onClick={simulateUpload}
+            onClick={uploadRecord}
             style={{
               width: "100%",
               background: isUploading ? PURPLE_DARK : PURPLE,
@@ -248,7 +293,7 @@ export default function UploadRecord() {
           {/* Encryption Status */}
           <Card title="Encryption">
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Badge color="#059669" bg="#d1fae5">Secure</Badge>
+              <Badge color="#059669" bg="#d1fae5">🔒 Secure</Badge>
             </div>
             <p style={{ color: "#475569", fontSize: 13, marginTop: 12, lineHeight: 1.5 }}>
               Client-side <b>AES-256</b> encryption enabled. Your file is encrypted in your
@@ -325,12 +370,12 @@ function Card({
         background: "#fff",
         borderRadius: 14,
         padding: 20,
-        border: "1px solid #9068a3",
+        border: "1px solid #e2e8f0",
         boxShadow: "0 1px 2px rgba(15,23,42,.04)",
       }}
     >
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontWeight: 700, color: PURPLE, fontSize: 18 }}>{title}</div>
+        <div style={{ fontWeight: 700, color: PURPLE, fontSize: 15 }}>{title}</div>
         {subtitle && (
           <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{subtitle}</div>
         )}
@@ -428,7 +473,7 @@ function Spinner() {
         display: "inline-block",
         width: 14,
         height: 14,
-        border: "2px solid rgba(234, 219, 238, 0.4)",
+        border: "2px solid rgba(255,255,255,.4)",
         borderTopColor: "#fff",
         borderRadius: "50%",
         animation: "spin 0.8s linear infinite",
