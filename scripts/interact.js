@@ -39,7 +39,36 @@ async function main() {
     console.log("Contract address:", contractAddress);
     console.log("Network:", (await hre.ethers.provider.getNetwork()).name);
 
-    console.log("\n✅ Contract interaction successful!");
+    // Try to fetch created records
+    console.log("\n📚 Checking for created records:\n");
+    
+    let recordCount = 0;
+    for (let i = 1; i <= 5; i++) {
+      try {
+        const record = await contract.getRecord(i);
+        recordCount++;
+        console.log(`✅ Record ${i}:`);
+        console.log(`   Owner: ${record.owner}`);
+        console.log(`   IPFS CID: ${record.ipfsCid}`);
+        console.log(`   Created: ${new Date(record.createdAt * 1000).toISOString()}\n`);
+      } catch (error) {
+        if (error.message.includes("does not exist")) {
+          // Record doesn't exist, skip
+        } else if (error.message.includes("No access")) {
+          // No access, skip
+        } else {
+          // Other error, log it
+        }
+      }
+    }
+    
+    if (recordCount === 0) {
+      console.log("ℹ️  No records found or no access to any records\n");
+    } else {
+      console.log(`📊 Total accessible records: ${recordCount}\n`);
+    }
+
+    console.log("✅ Contract interaction successful!");
     console.log("\n💡 Available operations on this contract:");
     console.log("   - addRecord(ipfsCid)");
     console.log("   - grantAccess(recordId, userAddress, expiryTime)");

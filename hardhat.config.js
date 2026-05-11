@@ -48,9 +48,17 @@ module.exports = {
     },
   },
   etherscan: {
-    apiKey: {
-      polygonAmoy: ETHERSCAN_API_KEY,
-    },
+    apiKey: ETHERSCAN_API_KEY,
+    customChains: [
+      {
+        network: "polygonAmoy",
+        chainId: 80002,
+        urls: {
+          apiURL: "https://api-amoy.polygonscan.com/api",
+          browserURL: "https://amoy.polygonscan.com",
+        },
+      },
+    ],
   },
   paths: {
     sources: "./contracts",

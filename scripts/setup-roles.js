@@ -31,7 +31,11 @@ async function main() {
   const contract = MedicalRecords.attach(contractAddress);
 
   // Get signers
-  const [deployer, doctor, patient] = await hre.ethers.getSigners();
+  const signers = await hre.ethers.getSigners();
+  const deployer = signers[0];
+  const doctor = signers[1] || deployer;
+  const patient = signers[2] || deployer;
+  
   console.log("\n👥 Available Accounts:");
   console.log("Deployer:", deployer.address);
   console.log("Doctor:   ", doctor.address);

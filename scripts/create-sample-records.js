@@ -31,9 +31,12 @@ async function main() {
   const MedicalRecords = await hre.ethers.getContractFactory("MedicalRecords");
   const contract = MedicalRecords.attach(contractAddress);
 
-  // Get signers
-  const [deployer, doctor, patient1, patient2] =
-    await hre.ethers.getSigners();
+  // Get signers - handle both local and testnet (testnet only has deployer)
+  const signers = await hre.ethers.getSigners();
+  const deployer = signers[0];
+  const doctor = signers[1] || deployer;
+  const patient1 = signers[2] || deployer;
+  const patient2 = signers[3] || deployer;
 
   console.log("Deployer:", deployer.address);
   console.log("Doctor:", doctor.address);
