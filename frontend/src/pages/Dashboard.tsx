@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PageKey } from "../App";
-import { getContract }
-from "../blockchain/contract";
+import { getContract } from "../blockchain/contract";
+
 type Props = {
   setActivePage: (page: PageKey) => void;
 };
+
 // ── Types ──────────────────────────────────────────────────────────────────
 interface MedicalRecord {
   id: string; cid: string; patient: string;
@@ -22,9 +23,7 @@ interface AuditLog {
 const testContract = async () => {
   try {
     const contract = await getContract();
-
     console.log(contract);
-
     alert("Contract Connected!");
   } catch (err) {
     console.error(err);
@@ -34,49 +33,26 @@ const testContract = async () => {
 const addTestRecord = async () => {
   try {
     const contract = await getContract();
-
-    const tx = await contract.addRecord(
-      "QmTestCID123456789"
-    );
-
+    const tx = await contract.addRecord("QmTestCID123456789");
     console.log(tx);
-
     await tx.wait();
-
     alert("Record Added!");
   } catch (err) {
     console.error(err);
   }
 };
 
-// ── Mock Data ──────────────────────────────────────────────────────────────
-const RECORDS: MedicalRecord[] = [
-  { id: "REC-0x4F2A", cid: "QmX7kP9mNvR3wE2cL8sJ6tY1aB5dF0gH4iK", patient: "Nguyễn Văn An", uploadedAt: "2025-05-07 09:14", status: "verified", type: "Blood Test" },
-  { id: "REC-0x8C1D", cid: "QmT3nM6rK0pA9wX4vL7sQ2dE5hG8jI1mN", patient: "Trần Thị Bích", uploadedAt: "2025-05-06 14:32", status: "verified", type: "X-Ray Report" },
-  { id: "REC-0x2E9B", cid: "QmP5kL8nV2xR6cW9yT3jA7bD4eF1gH0iJ", patient: "Lê Minh Khoa", uploadedAt: "2025-05-05 11:08", status: "pending", type: "MRI Scan" },
-  { id: "REC-0x6A3C", cid: "QmR9mN4kP7wX2vL5sQ8dE3hG6jI0aB1cD", patient: "Phạm Thị Lan", uploadedAt: "2025-05-04 16:45", status: "flagged", type: "Prescription" },
-];
+// ── Helpers ────────────────────────────────────────────────────────────────
+const shortAddr = (a: string) =>
+  a && a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
 
-const PERMISSIONS: Permission[] = [
-  { id: "P-001", doctor: "0x3d2F...8aB1", name: "BS. Nguyễn Hữu Phúc", granted: "2025-04-20", expiry: "2025-07-20", access: "active" },
-  { id: "P-002", doctor: "0x7c4E...2dF9", name: "BS. Trần Thị Mai", granted: "2025-03-15", expiry: "2025-06-15", access: "active" },
-  { id: "P-003", doctor: "0x1a8B...5eC3", name: "BS. Lê Quang Huy", granted: "2025-01-10", expiry: "2025-04-10", access: "expired" },
-];
-
-const LOGS: AuditLog[] = [
-  { id: "L-001", action: "Record Uploaded", actor: "0x9f1A...3bC2", target: "REC-0x4F2A", timestamp: "2025-05-07 09:14", type: "upload" },
-  { id: "L-002", action: "Access Granted", actor: "0x9f1A...3bC2", target: "BS. Nguyễn Hữu Phúc", timestamp: "2025-05-06 17:22", type: "grant" },
-  { id: "L-003", action: "Record Viewed", actor: "0x3d2F...8aB1", target: "REC-0x8C1D", timestamp: "2025-05-06 10:05", type: "view" },
-  { id: "L-004", action: "Access Revoked", actor: "0x9f1A...3bC2", target: "BS. Lê Quang Huy", timestamp: "2025-05-04 08:30", type: "revoke" },
-  { id: "L-005", action: "Record Uploaded", actor: "0x9f1A...3bC2", target: "REC-0x6A3C", timestamp: "2025-05-04 16:45", type: "upload" },
-];
-
-const STATS = [
-  { label: "Total Records", value: "24", icon: "🗂️", color: "#af8eb9", bg: "rgba(72, 5, 88, 0.1)" },
-  { label: "Active Permissions", value: "7", icon: "🔐", color: "#9755bd", bg: "rgba(72, 5, 88, 0.1)" },
-  { label: "IPFS Pinned", value: "24", icon: "📌", color: "#592174", bg: "rgba(72, 5, 88, 0.1)" },
-  { label: "Txns On-Chain", value: "58", icon: "⛓️", color: "#280635", bg: "rgba(72, 5, 88, 0.1)" },
-];
+const fmtTimestamp = (ts: bigint | number) => {
+  const n = typeof ts === "bigint" ? Number(ts) : ts;
+  if (!n) return "—";
+  const d = new Date(n * 1000);
+  const pad = (x: number) => String(x).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 const Badge = ({ status }: { status: string }) => {
@@ -126,14 +102,119 @@ const Btn = ({ children, onClick, variant = "primary", style = {} }: any) => {
   );
 };
 
-// ── Dashboard (distinctive content only) ───────────────────────────────────
-export default function Dashboard({
-  setActivePage,
-}: Props) {
+// ── Dashboard ──────────────────────────────────────────────────────────────
+export default function Dashboard({ setActivePage }: Props) {
   const [search, setSearch] = useState("");
-  const [perms, setPerms] = useState(PERMISSIONS);
+  const [records, setRecords] = useState<MedicalRecord[]>([]);
+  const [perms, setPerms] = useState<Permission[]>([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [wallet, setWallet] = useState<string>("");
 
-  const filtered = RECORDS.filter(
+  useEffect(() => {
+    loadRecords();
+  }, []);
+
+  const loadRecords = async () => {
+  setLoading(true);
+  setError(null);
+  try {
+    const contract = await getContract();
+
+    try {
+      const runner: any = contract.runner;
+      if (runner?.getAddress) setWallet(await runner.getAddress());
+    } catch { /* ignore */ }
+
+    const fetched: MedicalRecord[] = [];
+    const auditLogs: AuditLog[] = [];
+    const permList: Permission[] = [];
+
+    // Single loop starting at 1 — no separate total probe needed
+    for (let i = 1; i < 500; i++) {
+      try {
+        const r: any = await contract.records(i);
+        const exists: boolean = r.exists ?? r[4];
+        if (!exists) break;
+
+        const recordId = (r.recordId ?? r[0]).toString();
+        const owner: string = r.owner ?? r[1];
+        const ipfsCid: string = r.ipfsCid ?? r[2];
+        const createdAt = r.createdAt ?? r[3];
+
+        fetched.push({
+          id: `REC-${recordId}`,
+          cid: ipfsCid,
+          patient: shortAddr(owner),
+          uploadedAt: fmtTimestamp(createdAt),
+          status: "verified",
+          type: "On-chain Record",
+        });
+
+        auditLogs.push({
+          id: `L-${recordId}`,
+          action: "Record Uploaded",
+          actor: shortAddr(owner),
+          target: `REC-${recordId}`,
+          timestamp: fmtTimestamp(createdAt),
+          type: "upload",
+        });
+
+        for (let g = 0; g < 20; g++) {
+          try {
+            const grant: any = await contract.accessGrants(Number(recordId), g);
+            const doctor = grant.grantedTo ?? grant[0];
+            if (!doctor || doctor === "0x0000000000000000000000000000000000000000") break;
+
+            const grantedAt = grant.grantedAt ?? grant[1];
+            const expiresAt = grant.expiryTime ?? grant[2];
+            const revoked = grant.isRevoked ?? grant[3];
+            const now = Math.floor(Date.now() / 1000);
+            const expSec = Number(expiresAt);
+            const access: Permission["access"] = revoked
+              ? "revoked"
+              : expSec && expSec < now
+                ? "expired"
+                : "active";
+
+            permList.push({
+              id: `P-${recordId}-${g}`,
+              doctor: shortAddr(doctor),
+              name: `Doctor ${shortAddr(doctor)}`,
+              granted: fmtTimestamp(grantedAt),
+              expiry: expSec ? fmtTimestamp(expiresAt) : "—",
+              access,
+            });
+
+            auditLogs.push({
+              id: `LG-${recordId}-${g}`,
+              action: revoked ? "Access Revoked" : "Access Granted",
+              actor: shortAddr(owner),
+              target: shortAddr(doctor),
+              timestamp: fmtTimestamp(grantedAt),
+              type: revoked ? "revoke" : "grant",
+            });
+          } catch { break; }
+        }
+      } catch (e) {
+  console.warn("Skipping record", i);
+  continue;
+}
+    }
+
+    setRecords(fetched);
+    setPerms(permList);
+    setLogs(auditLogs.slice(-5).reverse());
+  } catch (e: any) {
+    console.error(e);
+    setError(e?.message || "Failed to load blockchain data");
+  } finally {
+    setLoading(false);
+  }
+};
+
+  const filtered = records.filter(
     (r) =>
       r.id.toLowerCase().includes(search.toLowerCase()) ||
       r.patient.toLowerCase().includes(search.toLowerCase()) ||
@@ -142,6 +223,15 @@ export default function Dashboard({
 
   const revoke = (id: string) =>
     setPerms((p) => p.map((x) => (x.id === id ? { ...x, access: "revoked" as const } : x)));
+
+  const activePerms = perms.filter((p) => p.access === "active").length;
+
+  const STATS = [
+    { label: "Total Records", value: loading ? "…" : String(records.length), icon: "🗂️", color: "#af8eb9", bg: "rgba(72, 5, 88, 0.1)" },
+    { label: "Active Permissions", value: loading ? "…" : String(activePerms), icon: "🔐", color: "#9755bd", bg: "rgba(72, 5, 88, 0.1)" },
+    { label: "IPFS Pinned", value: loading ? "…" : String(records.length), icon: "📌", color: "#592174", bg: "rgba(72, 5, 88, 0.1)" },
+    { label: "Txns On-Chain", value: loading ? "…" : String(records.length + perms.length), icon: "⛓️", color: "#280635", bg: "rgba(72, 5, 88, 0.1)" },
+  ];
 
   return (
     <>
@@ -152,15 +242,16 @@ export default function Dashboard({
           <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 16 }}>Decentralized Electronic Medical Records on Polygon · IPFS Storage</p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <Btn variant="ghost">🔔 Alerts</Btn>
-          <Btn
-  variant="primary"
-  onClick={() => setActivePage("upload")}
->
-  + Upload Record
-</Btn>
+          <Btn variant="ghost" onClick={loadRecords}>Refresh</Btn>
+          <Btn variant="primary" onClick={() => setActivePage("upload")}>+ Upload Record</Btn>
         </div>
       </div>
+
+      {error && (
+        <Card style={{ marginBottom: 16, borderColor: "#ef4444", background: "rgba(239,68,68,0.05)" }}>
+          <div style={{ color: "#ef4444", fontWeight: 600, fontSize: 13 }}>⚠ {error}</div>
+        </Card>
+      )}
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 16, marginBottom: 24 }}>
@@ -182,7 +273,7 @@ export default function Dashboard({
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: 11, color: "#a5b4fc", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Connected Wallet</div>
-            <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700 }}>0x9f1A8c3E...b7D2F3bC2</div>
+            <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700 }}>{wallet ? `${wallet.slice(0, 10)}...${wallet.slice(-9)}` : "Not connected"}</div>
             <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13, color: "#c7d2fe" }}>🌐 Polygon Amoy Testnet</span>
               <span style={{ fontSize: 13, color: "#c7d2fe" }}>💜 Chain ID: 80002</span>
@@ -190,8 +281,8 @@ export default function Dashboard({
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-              <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#10b981", display: "inline-block", boxShadow: "0 0 8px #10b981" }} />
-              <span style={{ color: "#10b981", fontWeight: 700, fontSize: 14 }}>CONNECTED</span>
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: wallet ? "#10b981" : "#ef4444", display: "inline-block", boxShadow: `0 0 8px ${wallet ? "#10b981" : "#ef4444"}` }} />
+              <span style={{ color: wallet ? "#10b981" : "#ef4444", fontWeight: 700, fontSize: 14 }}>{wallet ? "CONNECTED" : "DISCONNECTED"}</span>
             </div>
             <div style={{ color: "#6366f1", fontSize: 12, marginTop: 4 }}>0 MATIC balance</div>
             <Btn variant="ghost" style={{ marginTop: 8, color: "#a5b4fc", borderColor: "rgba(165,180,252,0.3)", fontSize: 12 }}>Disconnect</Btn>
@@ -223,7 +314,10 @@ export default function Dashboard({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r, i) => (
+              {loading && (
+                <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>Loading records from blockchain…</td></tr>
+              )}
+              {!loading && filtered.map((r, i) => (
                 <tr
                   key={r.id}
                   style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}
@@ -239,7 +333,7 @@ export default function Dashboard({
                   <td style={{ padding: "10px 12px" }}><Btn variant="ghost" style={{ fontSize: 12, padding: "4px 10px" }}>👁 View</Btn></td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {!loading && filtered.length === 0 && (
                 <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>No records found.</td></tr>
               )}
             </tbody>
@@ -250,8 +344,10 @@ export default function Dashboard({
       {/* Permissions + Quick Actions */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20, marginBottom: 24, alignItems: "start" }}>
         <Card>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px",color: "#722496" }}>Active Permissions</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "#722496" }}>Active Permissions</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {loading && <div style={{ color: "#94a3b8", fontSize: 13 }}>Loading permissions…</div>}
+            {!loading && perms.length === 0 && <div style={{ color: "#94a3b8", fontSize: 13 }}>No permissions found on-chain.</div>}
             {perms.map((p) => (
               <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", borderRadius: 10, background: "#f8fafc", border: "1px solid #f1f5f9", flexWrap: "wrap", gap: 8 }}>
                 <div>
@@ -270,7 +366,7 @@ export default function Dashboard({
 
         <Card>
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "#71318f" }}>Quick Actions</h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 , }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {[
               { label: "Upload New Record", v: "primary", page: "upload" },
               { label: "Grant Access", v: "success", page: "access" },
@@ -278,18 +374,13 @@ export default function Dashboard({
               { label: "Verify Medicine", v: "ghost", page: "medicine" },
             ].map((a) => (
               <Btn
-            key={a.label}
-            variant={a.v}
-            onClick={() => setActivePage(a.page as PageKey)}
-            style={{
-            width: "100%",
-            padding: "10px 16px",
-            textAlign: "left",
-            fontSize: 13
-        }}
->
-  {a.label}
-</Btn>
+                key={a.label}
+                variant={a.v}
+                onClick={() => setActivePage(a.page as PageKey)}
+                style={{ width: "100%", padding: "10px 16px", textAlign: "left", fontSize: 13 }}
+              >
+                {a.label}
+              </Btn>
             ))}
           </div>
           <div style={{ marginTop: 20, padding: "12px 14px", borderRadius: 10, background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.15)" }}>
@@ -304,18 +395,14 @@ export default function Dashboard({
       {/* Audit Logs */}
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "#722496"}}>Recent Audit Logs</h2>
-          <Btn
-          variant="ghost"
-          style={{ fontSize: 12 }}
-          onClick={() => setActivePage("audit")}
-          >
-          View All →
-          </Btn>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: "#722496" }}>Recent Audit Logs</h2>
+          <Btn variant="ghost" style={{ fontSize: 12 }} onClick={() => setActivePage("audit")}>View All →</Btn>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          {LOGS.map((l, i) => (
-            <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0", borderBottom: i < LOGS.length - 1 ? "1px solid #f1f5f9" : "none", flexWrap: "wrap" }}>
+          {loading && <div style={{ color: "#94a3b8", fontSize: 13, padding: "12px 0" }}>Loading audit trail…</div>}
+          {!loading && logs.length === 0 && <div style={{ color: "#94a3b8", fontSize: 13, padding: "12px 0" }}>No on-chain activity yet.</div>}
+          {logs.map((l, i) => (
+            <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0", borderBottom: i < logs.length - 1 ? "1px solid #f1f5f9" : "none", flexWrap: "wrap" }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: l.type === "upload" ? "rgba(59,130,246,0.1)" : l.type === "grant" ? "rgba(16,185,129,0.1)" : l.type === "revoke" ? "rgba(239,68,68,0.1)" : "rgba(139,92,246,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 16 }}>
                 {l.type === "upload" ? "📤" : l.type === "grant" ? "🔐" : l.type === "revoke" ? "❌" : "👁️"}
               </div>
@@ -333,16 +420,6 @@ export default function Dashboard({
           ))}
         </div>
       </Card>
-      <button onClick={testContract}>
-  Test Smart Contract
-</button>
-<Btn
-  variant="success"
-  onClick={addTestRecord}
-  style={{ marginTop: 10 }}
->
-  Add Test Record
-</Btn>
     </>
   );
 }
