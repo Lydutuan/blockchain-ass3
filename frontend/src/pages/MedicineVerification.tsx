@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getContract, getReadContract } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
@@ -7,31 +8,24 @@ const PURPLE_SOFT = "#f3e8ff";
 type AuthStatus = "authentic" | "suspicious" | "expired" | null;
 
 interface VerificationResult {
+  medicineId: string;
   drugName: string;
   manufacturer: string;
+  manufacturerAddr: string;
   batchId: string;
   manufacturedDate: string;
   expiryDate: string;
   status: AuthStatus;
+  ipfsCid: string;
   hash: string;
 }
 
-const MOCK_RESULT: VerificationResult = {
-  drugName: "Paracetamol 500mg",
-  manufacturer: "Hau Giang Pharmaceutical JSC",
-  batchId: "MED-VN-0042",
-  manufacturedDate: "2024-11-12",
-  expiryDate: "2026-11-11",
-  status: "authentic",
-  hash: "0x7f3a9c2e8b1d4f6a0c5e9b2d8f1a4c7e3b6d9f2a",
-};
-
-const TIMELINE = [
-  { step: "Manufactured",      date: "2024-11-12", actor: "Hau Giang Pharma",   hash: "0xa1b2...c3d4" },
-  { step: "Distributed",       date: "2024-12-03", actor: "VN Distribution Co", hash: "0xb2c3...d4e5" },
-  { step: "Pharmacy Verified", date: "2025-01-15", actor: "Pharmacy Hanoi #12", hash: "0xc3d4...e5f6" },
-  { step: "Patient Verified",  date: "2025-05-09", actor: "0x9f1A...3bC2",      hash: "0xd4e5...f6a7" },
-];
+interface TimelineStep {
+  step: string;
+  date: string;
+  actor: string;
+  hash: string;
+}
 
 const Card = ({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) => (
   <div style={{ background: "#fff", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #593c6d", ...style }}>
@@ -65,18 +59,121 @@ const Btn = ({ children, onClick, variant = "primary", style = {}, disabled }: a
   );
 };
 
+const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a);
+const shortHash = (h: string) => (h && h.length > 14 ? `${h.slice(0, 10)}...${h.slice(-6)}` : h);
+const fmtDate = (ts: bigint | number) => {
+  const n = Number(ts);
+  if (!n) return "—";
+  return new Date(n * 1000).toISOString().slice(0, 10);
+};
+const fmtTime = (ts: number) => {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 export default function MedicineVerification() {
   const [batchId, setBatchId] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [result, setResult] = useState<VerificationResult | null>(null);
+  const [timeline, setTimeline] = useState<TimelineStep[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string>("");
 
   const handleVerify = async () => {
     if (!batchId.trim()) return;
     setVerifying(true);
     setResult(null);
-    await new Promise((r) => setTimeout(r, 1200));
-    setResult(MOCK_RESULT);
-    setVerifying(false);
+    setTimeline([]);
+    setError(null);
+    setNotice(null);
+    setTxHash("");
+
+    try {
+      const readContract = await getReadContract();
+      const m = await readContract.getMedicine(batchId.trim());
+
+      const manufacturerAddr: string = m.manufacturerAddr ?? m[1];
+      const manufacturer: string = m.manufacturer ?? m[2];
+      const batchNumber: string = m.batchNumber ?? m[3];
+      const manufactureDate: bigint = m.manufactureDate ?? m[4];
+      const expiryDate: bigint = m.expiryDate ?? m[5];
+      const ipfsCid: string = m.ipfsCid ?? m[6];
+      const verified: boolean = m.verified ?? m[7];
+
+      const now = Math.floor(Date.now() / 1000);
+      const status: AuthStatus =
+        Number(expiryDate) > 0 && Number(expiryDate) < now ? "expired" : verified ? "authentic" : "suspicious";
+
+      // Send verification tx
+      let confirmedHash = "";
+      try {
+        const writeContract = await getContract();
+        const tx = await writeContract.verifyMedicine(batchId.trim());
+        setNotice(`Verification tx sent: ${tx.hash.slice(0, 12)}…`);
+        const rcpt = await tx.wait();
+        confirmedHash = rcpt?.hash ?? tx.hash;
+        setTxHash(confirmedHash);
+        setNotice(`✓ Verified on-chain (tx ${confirmedHash.slice(0, 10)}…)`);
+      } catch (txErr: any) {
+        setNotice(`Read-only verification (no tx submitted)`);
+      }
+
+      // Pull events for traceability timeline
+      const steps: TimelineStep[] = [];
+      try {
+        const provider = readContract.runner?.provider;
+        if (provider) {
+          const current = await provider.getBlockNumber();
+          const fromBlock = Math.max(0, current - 100000);
+          const regs = await readContract.queryFilter(
+            readContract.filters.MedicineRegistered(batchId.trim()),
+            fromBlock,
+            current,
+          ).catch(() => []);
+          const vers = await readContract.queryFilter(
+            readContract.filters.MedicineVerified(batchId.trim()),
+            fromBlock,
+            current,
+          ).catch(() => []);
+          for (const e of regs as any[]) {
+            steps.push({
+              step: "Manufactured",
+              date: fmtTime(Number(e.args?.timestamp ?? 0n)),
+              actor: shortAddr(e.args?.manufacturer ?? ""),
+              hash: shortHash(e.transactionHash),
+            });
+          }
+          for (const e of vers as any[]) {
+            steps.push({
+              step: "Verified",
+              date: fmtTime(Number(e.args?.timestamp ?? 0n)),
+              actor: shortAddr(e.args?.verifier ?? ""),
+              hash: shortHash(e.transactionHash),
+            });
+          }
+        }
+      } catch { /* ignore timeline failure */ }
+
+      setTimeline(steps);
+      setResult({
+        medicineId: batchId.trim(),
+        drugName: batchId.trim(),
+        manufacturer,
+        manufacturerAddr,
+        batchId: batchNumber,
+        manufacturedDate: fmtDate(manufactureDate),
+        expiryDate: fmtDate(expiryDate),
+        status,
+        ipfsCid,
+        hash: confirmedHash || ipfsCid,
+      });
+    } catch (e: any) {
+      setError(e?.shortMessage ?? e?.message ?? "Medicine not found on-chain");
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const handleScan = () => {
@@ -92,12 +189,18 @@ export default function MedicineVerification() {
         </p>
       </div>
 
+      {(notice || error) && (
+        <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 10, background: error ? "#fef2f2" : "#ecfdf5", color: error ? "#991b1b" : "#065f46", fontSize: 13, fontWeight: 500 }}>
+          {error ?? notice}
+        </div>
+      )}
+
       {/* Verification Input */}
       <Card style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 21, fontWeight: 700, margin: "0 0 16px", color: "#361353" }}>Verify a Medicine</h2>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>Batch ID</label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>Medicine ID / Batch Number</label>
             <input
               value={batchId}
               onChange={(e) => setBatchId(e.target.value)}
@@ -142,38 +245,43 @@ export default function MedicineVerification() {
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16 }}>
             {[
-              ["Drug Name", result.drugName],
-              ["Manufacturer", result.manufacturer],
-              ["Batch ID", result.batchId],
+              ["Medicine ID", result.medicineId],
+              ["Manufacturer", result.manufacturer || "—"],
+              ["Manufacturer Wallet", shortAddr(result.manufacturerAddr)],
+              ["Batch Number", result.batchId || "—"],
               ["Manufactured", result.manufacturedDate],
               ["Expiry Date", result.expiryDate],
             ].map(([k, v]) => (
               <div key={k}>
                 <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>{k}</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", marginTop: 4 }}>{v}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", marginTop: 4, wordBreak: "break-all" }}>{v}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ marginTop: 20, padding: "12px 14px", borderRadius: 10, background: PURPLE_SOFT, border: `1px solid ${PURPLE}33` }}>
-            <div style={{ fontSize: 11, color: PURPLE_DARK, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Blockchain Verification Hash</div>
-            <div style={{ fontFamily: "monospace", fontSize: 12, color: PURPLE_DARK, wordBreak: "break-all" }}>{result.hash}</div>
-          </div>
+          {(txHash || result.ipfsCid) && (
+            <div style={{ marginTop: 20, padding: "12px 14px", borderRadius: 10, background: PURPLE_SOFT, border: `1px solid ${PURPLE}33` }}>
+              <div style={{ fontSize: 11, color: PURPLE_DARK, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+                {txHash ? "Verification Transaction Hash" : "IPFS CID"}
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 12, color: PURPLE_DARK, wordBreak: "break-all" }}>{txHash || result.ipfsCid}</div>
+            </div>
+          )}
         </Card>
       )}
 
       {/* Timeline */}
-      {result && (
+      {result && timeline.length > 0 && (
         <Card style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: 21, fontWeight: 700, margin: "0 0 20px", color: "#3f2157" }}>Blockchain Traceability Timeline</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            {TIMELINE.map((t, i) => (
-              <div key={t.step} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            {timeline.map((t, i) => (
+              <div key={`${t.step}-${i}`} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                   <div style={{ width: 32, height: 32, borderRadius: "50%", background: PURPLE, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700 }}>
                     {i + 1}
                   </div>
-                  {i < TIMELINE.length - 1 && <div style={{ width: 2, flex: 1, minHeight: 40, background: PURPLE_SOFT }} />}
+                  {i < timeline.length - 1 && <div style={{ width: 2, flex: 1, minHeight: 40, background: PURPLE_SOFT }} />}
                 </div>
                 <div style={{ flex: 1, paddingBottom: 20 }}>
                   <div style={{ fontWeight: 700, color: "#0f172a" }}>{t.step}</div>

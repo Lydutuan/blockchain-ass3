@@ -30,7 +30,7 @@ contract MedicalRecords is ReentrancyGuard {
     }
 
     // State variables
-    uint256 private recordCounter = 1;
+    uint256 public recordCounter = 1;
     mapping(uint256 => PatientRecord) public records;
     mapping(uint256 => Access[]) public accessGrants;
 
@@ -62,6 +62,14 @@ contract MedicalRecords is ReentrancyGuard {
      * @param _ipfsCid The IPFS CID containing the encrypted medical data
      * @return The new record ID
      */
+    function getAccessCount(uint256 _recordId)
+    external
+    view
+    returns (uint256)
+{
+    return accessGrants[_recordId].length;
+}
+
     function addRecord(string memory _ipfsCid)
         external
         nonReentrant

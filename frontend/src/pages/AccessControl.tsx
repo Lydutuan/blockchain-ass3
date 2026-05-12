@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { getContract, getReadContract } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
@@ -8,19 +9,15 @@ type AccessStatus = "active" | "expired" | "revoked";
 
 interface Permission {
   id: string;
+  recordId: bigint;
+  index: number;
   provider: string;
-  recordId: string;
+  providerFull: string;
   grantedDate: string;
   expiry: string;
+  expiryTs: bigint;
   status: AccessStatus;
 }
-
-const INITIAL: Permission[] = [
-  { id: "P-001", provider: "0x3d2F...8aB1", recordId: "REC-0x4F2A", grantedDate: "2025-04-20", expiry: "2025-07-20", status: "active" },
-  { id: "P-002", provider: "0x7c4E...2dF9", recordId: "REC-0x8C1D", grantedDate: "2025-03-15", expiry: "2025-06-15", status: "active" },
-  { id: "P-003", provider: "0x1a8B...5eC3", recordId: "REC-0x2E9B", grantedDate: "2025-01-10", expiry: "2025-04-10", status: "expired" },
-  { id: "P-004", provider: "0x5f2C...9dA4", recordId: "REC-0x6A3C", grantedDate: "2025-02-22", expiry: "2025-05-22", status: "revoked" },
-];
 
 const Card = ({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) => (
   <div style={{ background: "#ffffff", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 8px rgba(0,0,0,0.07)", border: "1px solid #977aa5", ...style }}>
@@ -54,11 +51,93 @@ const Btn = ({ children, onClick, variant = "primary", style = {}, disabled }: a
   );
 };
 
+const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a);
+const fmtDate = (ts: bigint | number) => {
+  const n = Number(ts);
+  if (!n) return "—";
+  return new Date(n * 1000).toISOString().slice(0, 10);
+};
+
 export default function AccessControl() {
-  const [permissions, setPermissions] = useState<Permission[]>(INITIAL);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [walletAddr, setWalletAddr] = useState("");
   const [recordId, setRecordId] = useState("");
   const [expiry, setExpiry] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [connectedWallet, setConnectedWallet] = useState<string>("");
+
+  const loadPermissions = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const contract = await getReadContract();
+      const total = Number(await contract.recordCounter()) - 1;
+      const all: Permission[] = [];
+      const now = Math.floor(Date.now() / 1000);
+
+      for (let r = 1; r <= total; r++) {
+        let count = 0;
+        try {
+          count = Number(await contract.getAccessCount(r));
+        } catch {
+          // fallback: probe accessGrants until revert
+          for (let i = 0; i < 50; i++) {
+            try {
+              await contract.accessGrants(r, i);
+              count = i + 1;
+            } catch {
+              break;
+            }
+          }
+        }
+        for (let i = 0; i < count; i++) {
+          try {
+            const g = await contract.accessGrants(r, i);
+            const grantedTo: string = g.grantedTo ?? g[0];
+            const grantedAt: bigint = g.grantedAt ?? g[1];
+            const expiryTime: bigint = g.expiryTime ?? g[2];
+            const isRevoked: boolean = g.isRevoked ?? g[3];
+            const status: AccessStatus = isRevoked
+              ? "revoked"
+              : Number(expiryTime) > 0 && Number(expiryTime) < now
+                ? "expired"
+                : "active";
+            all.push({
+              id: `${r}-${i}`,
+              recordId: BigInt(r),
+              index: i,
+              provider: shortAddr(grantedTo),
+              providerFull: grantedTo,
+              grantedDate: fmtDate(grantedAt),
+              expiry: fmtDate(expiryTime),
+              expiryTs: expiryTime,
+              status,
+            });
+          } catch { /* skip */ }
+        }
+      }
+      setPermissions(all);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load permissions");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (typeof window !== "undefined" && window.ethereum) {
+          const accs: string[] = await window.ethereum.request({ method: "eth_requestAccounts" });
+          if (accs?.[0]) setConnectedWallet(accs[0]);
+        }
+      } catch { /* ignore */ }
+      loadPermissions();
+    })();
+  }, [loadPermissions]);
 
   const stats = {
     active:  permissions.filter((p) => p.status === "active").length,
@@ -67,22 +146,44 @@ export default function AccessControl() {
     total:   permissions.length,
   };
 
-  const grant = () => {
+  const grant = async () => {
     if (!walletAddr.trim() || !recordId.trim() || !expiry) return;
-    const newPerm: Permission = {
-      id: `P-${String(permissions.length + 1).padStart(3, "0")}`,
-      provider: walletAddr,
-      recordId,
-      grantedDate: new Date().toISOString().slice(0, 10),
-      expiry,
-      status: "active",
-    };
-    setPermissions([newPerm, ...permissions]);
-    setWalletAddr(""); setRecordId(""); setExpiry("");
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const contract = await getContract();
+      const expiryTs = Math.floor(new Date(expiry).getTime() / 1000);
+      const tx = await contract.grantAccess(BigInt(recordId.replace(/\D/g, "") || "0"), walletAddr.trim(), BigInt(expiryTs));
+      setNotice(`Transaction sent: ${tx.hash.slice(0, 12)}…`);
+      await tx.wait();
+      setNotice(`✓ Access granted (tx ${tx.hash.slice(0, 10)}…)`);
+      setWalletAddr(""); setRecordId(""); setExpiry("");
+      await loadPermissions();
+    } catch (e: any) {
+      setError(e?.shortMessage ?? e?.message ?? "Grant failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const revoke = (id: string) =>
-    setPermissions((p) => p.map((x) => (x.id === id ? { ...x, status: "revoked" as const } : x)));
+  const revoke = async (p: Permission) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const contract = await getContract();
+      const tx = await contract.revokeAccess(p.recordId, p.providerFull);
+      setNotice(`Revoking… ${tx.hash.slice(0, 12)}…`);
+      await tx.wait();
+      setNotice(`✓ Access revoked (tx ${tx.hash.slice(0, 10)}…)`);
+      await loadPermissions();
+    } catch (e: any) {
+      setError(e?.shortMessage ?? e?.message ?? "Revoke failed");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <>
@@ -92,6 +193,12 @@ export default function AccessControl() {
           Manage blockchain-based permissions for healthcare providers and institutions.
         </p>
       </div>
+
+      {(notice || error) && (
+        <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 10, background: error ? "#fef2f2" : "#ecfdf5", color: error ? "#991b1b" : "#065f46", fontSize: 13, fontWeight: 500 }}>
+          {error ?? notice}
+        </div>
+      )}
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 16, marginBottom: 24 }}>
@@ -133,7 +240,7 @@ export default function AccessControl() {
             <input
               value={recordId}
               onChange={(e) => setRecordId(e.target.value)}
-              placeholder="REC-0x..."
+              placeholder="e.g. 1"
               style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none", color: "#1e293b", boxSizing: "border-box" }}
             />
           </div>
@@ -146,15 +253,20 @@ export default function AccessControl() {
               style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, outline: "none", color: "#1e293b", boxSizing: "border-box" }}
             />
           </div>
-          <Btn variant="primary" onClick={grant} disabled={!walletAddr.trim() || !recordId.trim() || !expiry} style={{ height: 40 }}>
-            Grant Access
+          <Btn variant="primary" onClick={grant} disabled={busy || !walletAddr.trim() || !recordId.trim() || !expiry} style={{ height: 40 }}>
+            {busy ? "Processing…" : "Grant Access"}
           </Btn>
         </div>
       </Card>
 
       {/* Permissions table */}
       <Card style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 750, margin: "0 0 16px", color: "#785992" }}>Active Permissions</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 750, margin: 0, color: "#785992" }}>Active Permissions</h2>
+          <Btn variant="outline" onClick={loadPermissions} disabled={loading} style={{ fontSize: 12, padding: "6px 12px" }}>
+            {loading ? "Loading…" : "Refresh"}
+          </Btn>
+        </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
@@ -168,19 +280,24 @@ export default function AccessControl() {
               {permissions.map((p, i) => (
                 <tr key={p.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
                   <td style={{ padding: "10px 12px", fontFamily: "monospace", color: PURPLE, fontWeight: 600 }}>{p.provider}</td>
-                  <td style={{ padding: "10px 12px", fontFamily: "monospace", fontWeight: 500 }}>{p.recordId}</td>
+                  <td style={{ padding: "10px 12px", fontFamily: "monospace", fontWeight: 500 }}>REC-{p.recordId.toString()}</td>
                   <td style={{ padding: "10px 12px", color: "#64748b" }}>{p.grantedDate}</td>
                   <td style={{ padding: "10px 12px", color: "#64748b" }}>{p.expiry}</td>
                   <td style={{ padding: "10px 12px" }}><Badge s={p.status} /></td>
                   <td style={{ padding: "10px 12px" }}>
                     {p.status === "active" ? (
-                      <Btn variant="danger" style={{ fontSize: 12, padding: "5px 12px" }} onClick={() => revoke(p.id)}>Revoke</Btn>
+                      <Btn variant="danger" style={{ fontSize: 12, padding: "5px 12px" }} onClick={() => revoke(p)} disabled={busy}>Revoke</Btn>
                     ) : (
                       <span style={{ fontSize: 12, color: "#94a3b8" }}>—</span>
                     )}
                   </td>
                 </tr>
               ))}
+              {permissions.length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>
+                  {loading ? "Loading on-chain permissions…" : "No permissions found on-chain."}
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -210,7 +327,7 @@ export default function AccessControl() {
         <Card style={{ background: PURPLE_DARK, color: "#fff" }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 18px", color: "#fff" }}>Wallet & Network</h2>
           <div style={{ fontSize: 14, color: "#ddd6fe", fontWeight: 750, textTransform: "uppercase", letterSpacing: 0.5 }}>Connected Wallet</div>
-          <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, marginTop: 4, marginBottom: 14 }}>0x9f1A...3bC2</div>
+          <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, marginTop: 4, marginBottom: 14 }}>{connectedWallet ? shortAddr(connectedWallet) : "Not connected"}</div>
 
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, marginBottom: 8 }}>
             <span style={{ color: "#ddd6fe" }}>Network</span>
@@ -229,7 +346,6 @@ export default function AccessControl() {
           </div>
         </Card>
       </div>
-
     </>
   );
 }

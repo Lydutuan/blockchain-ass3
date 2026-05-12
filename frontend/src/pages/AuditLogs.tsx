@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { getReadContract } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
@@ -14,24 +15,8 @@ interface LogEntry {
   timestamp: string;
   status: "success" | "pending" | "failed";
   txHash: string;
+  blockNumber: number;
 }
-
-const LOGS: LogEntry[] = [
-  { id: "1", type: "upload", wallet: "0x9f1A...3bC2", recordId: "REC-0x4F2A", timestamp: "2025-05-07 09:14", status: "success", txHash: "0xa1b2c3d4e5f6" },
-  { id: "2", type: "grant",  wallet: "0x9f1A...3bC2", recordId: "REC-0x4F2A", timestamp: "2025-05-06 17:22", status: "success", txHash: "0xb2c3d4e5f6a7" },
-  { id: "3", type: "verify", wallet: "0x3d2F...8aB1", recordId: "MED-VN-0017", timestamp: "2025-05-06 10:05", status: "success", txHash: "0xc3d4e5f6a7b8" },
-  { id: "4", type: "revoke", wallet: "0x9f1A...3bC2", recordId: "REC-0x8C1D", timestamp: "2025-05-04 08:30", status: "success", txHash: "0xd4e5f6a7b8c9" },
-  { id: "5", type: "upload", wallet: "0x9f1A...3bC2", recordId: "REC-0x6A3C", timestamp: "2025-05-04 16:45", status: "pending", txHash: "0xe5f6a7b8c9d0" },
-  { id: "6", type: "verify", wallet: "0x7c4E...2dF9", recordId: "MED-VN-0042", timestamp: "2025-05-03 12:11", status: "success", txHash: "0xf6a7b8c9d0e1" },
-  { id: "7", type: "grant",  wallet: "0x9f1A...3bC2", recordId: "REC-0x2E9B", timestamp: "2025-05-02 14:50", status: "failed",  txHash: "0xa7b8c9d0e1f2" },
-];
-
-const STATS = [
-  { label: "Total Transactions",  value: "58", icon: "⛓️" },
-  { label: "Records Uploaded",    value: "24", icon: "⬆" },
-  { label: "Access Grants",       value: "12", icon: "🔑" },
-  { label: "Revoked Permissions", value: "5",  icon: "🚫" },
-];
 
 const TYPE_LABEL: Record<TxType, string> = {
   upload: "Upload Record",
@@ -64,11 +49,103 @@ const TypeChip = ({ t }: { t: TxType }) => {
   );
 };
 
+const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a);
+const shortHash = (h: string) => (h && h.length > 14 ? `${h.slice(0, 10)}...${h.slice(-4)}` : h);
+const fmtTime = (ts: number) => {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 export default function AuditLogs() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | TxType>("all");
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [latestBlock, setLatestBlock] = useState<string>("—");
 
-  const filtered = LOGS.filter((l) => {
+  const loadLogs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const contract = await getReadContract();
+      const provider = contract.runner?.provider;
+      if (!provider) throw new Error("Provider unavailable");
+
+      const current = await provider.getBlockNumber();
+      setLatestBlock(`#${current.toLocaleString()}`);
+      const fromBlock = Math.max(0, current - 100000);
+
+      const [createdEv, grantedEv, revokedEv] = await Promise.all([
+        contract.queryFilter(contract.filters.RecordCreated(), fromBlock, current).catch(() => []),
+        contract.queryFilter(contract.filters.AccessGranted(), fromBlock, current).catch(() => []),
+        contract.queryFilter(contract.filters.AccessRevoked(), fromBlock, current).catch(() => []),
+      ]);
+
+      const all: LogEntry[] = [];
+
+      for (const e of createdEv as any[]) {
+        const a = e.args ?? {};
+        all.push({
+          id: `${e.transactionHash}-${e.logIndex}`,
+          type: "upload",
+          wallet: shortAddr(a.owner ?? ""),
+          recordId: `REC-${(a.recordId ?? 0n).toString()}`,
+          timestamp: fmtTime(Number(a.timestamp ?? 0n)),
+          status: "success",
+          txHash: e.transactionHash,
+          blockNumber: e.blockNumber,
+        });
+      }
+      for (const e of grantedEv as any[]) {
+        const a = e.args ?? {};
+        all.push({
+          id: `${e.transactionHash}-${e.logIndex}`,
+          type: "grant",
+          wallet: shortAddr(a.grantedTo ?? ""),
+          recordId: `REC-${(a.recordId ?? 0n).toString()}`,
+          timestamp: fmtTime(Number(a.timestamp ?? 0n)),
+          status: "success",
+          txHash: e.transactionHash,
+          blockNumber: e.blockNumber,
+        });
+      }
+      for (const e of revokedEv as any[]) {
+        const a = e.args ?? {};
+        all.push({
+          id: `${e.transactionHash}-${e.logIndex}`,
+          type: "revoke",
+          wallet: shortAddr(a.revokedFrom ?? ""),
+          recordId: `REC-${(a.recordId ?? 0n).toString()}`,
+          timestamp: fmtTime(Number(a.timestamp ?? 0n)),
+          status: "success",
+          txHash: e.transactionHash,
+          blockNumber: e.blockNumber,
+        });
+      }
+
+      all.sort((a, b) => b.blockNumber - a.blockNumber);
+      setLogs(all.slice(0, 50));
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to load blockchain logs");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
+
+  const stats = [
+    { label: "Total Transactions",  value: String(logs.length), icon: "⛓️" },
+    { label: "Records Uploaded",    value: String(logs.filter(l => l.type === "upload").length), icon: "⬆" },
+    { label: "Access Grants",       value: String(logs.filter(l => l.type === "grant").length), icon: "🔑" },
+    { label: "Revoked Permissions", value: String(logs.filter(l => l.type === "revoke").length), icon: "🚫" },
+  ];
+
+  const filtered = logs.filter((l) => {
     const matchSearch = !search ||
       l.wallet.toLowerCase().includes(search.toLowerCase()) ||
       l.recordId.toLowerCase().includes(search.toLowerCase()) ||
@@ -88,7 +165,7 @@ export default function AuditLogs() {
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 16, marginBottom: 24 }}>
-        {STATS.map((s) => (
+        {stats.map((s) => (
           <Card key={s.label} style={{ padding: "16px 20px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
@@ -112,11 +189,11 @@ export default function AuditLogs() {
           </div>
           <div>
             <div style={{ fontSize: 11, color: "#ddd6fe", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Latest Block</div>
-            <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "monospace" }}>#18,394,221</div>
+            <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "monospace" }}>{latestBlock}</div>
           </div>
           <div>
-            <div style={{ fontSize: 11, color: "#ddd6fe", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Gas Price</div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>31 Gwei</div>
+            <div style={{ fontSize: 11, color: "#ddd6fe", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Events Loaded</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{logs.length}</div>
           </div>
           <div>
             <div style={{ fontSize: 11, color: "#ddd6fe", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Smart Contract</div>
@@ -150,8 +227,21 @@ export default function AuditLogs() {
               <option value="revoke">Revocations</option>
               <option value="verify">Verification</option>
             </select>
+            <button
+              onClick={loadLogs}
+              disabled={loading}
+              style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${PURPLE}`, background: PURPLE, color: "#fff", fontSize: 13, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1 }}
+            >
+              {loading ? "Refreshing…" : "Refresh"}
+            </button>
           </div>
         </div>
+
+        {error && (
+          <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "#fef2f2", color: "#991b1b", fontSize: 13 }}>
+            {error}
+          </div>
+        )}
 
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -170,7 +260,7 @@ export default function AuditLogs() {
                   <td style={{ padding: "10px 12px", fontFamily: "monospace", fontWeight: 500 }}>{l.recordId}</td>
                   <td style={{ padding: "10px 12px" }}>
                     <span style={{ fontFamily: "monospace", fontSize: 11, background: PURPLE_SOFT, color: PURPLE_DARK, padding: "3px 8px", borderRadius: 6, fontWeight: 600 }}>
-                      {l.txHash}
+                      {shortHash(l.txHash)}
                     </span>
                   </td>
                   <td style={{ padding: "10px 12px", color: "#64748b", whiteSpace: "nowrap" }}>{l.timestamp}</td>
@@ -178,14 +268,14 @@ export default function AuditLogs() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>No transactions match your filters.</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>
+                  {loading ? "Loading blockchain events…" : "No transactions found on-chain."}
+                </td></tr>
               )}
             </tbody>
           </table>
         </div>
       </Card>
-
-
     </>
   );
 }

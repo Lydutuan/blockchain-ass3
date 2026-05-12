@@ -6,6 +6,7 @@ from "../../MedicalRecords.abi.ts";
 const CONTRACT_ADDRESS =
   "0x1F04016F7c823D5173Ff45a163C81b4AF65da9e8";
 
+// WRITE CONTRACT (MetaMask)
 export async function getContract() {
   if (!(window as any).ethereum) {
     throw new Error("Wallet not found");
@@ -24,6 +25,24 @@ export async function getContract() {
       CONTRACT_ADDRESS,
       MEDICAL_RECORDS_ABI,
       signer
+    );
+
+  return contract;
+}
+
+// READ ONLY CONTRACT (for dashboards/audit logs)
+export async function getReadContract() {
+
+  const provider =
+    new ethers.JsonRpcProvider(
+      "https://rpc-amoy.polygon.technology"
+    );
+
+  const contract =
+    new ethers.Contract(
+      CONTRACT_ADDRESS,
+      MEDICAL_RECORDS_ABI,
+      provider
     );
 
   return contract;
