@@ -3,7 +3,7 @@ import { BrowserProvider, Contract} from "ethers";
 // Deployed MedicalRecords contract address (Polygon Amoy). Override via VITE_CONTRACT_ADDRESS.
 export const CONTRACT_ADDRESS =
   (import.meta as any).env?.VITE_CONTRACT_ADDRESS ||
-  "0x3c8Dad350D55631b3159734F84C1130693b6bB29";
+  "0xd035ee308B4588AE490D213D63809e53bd1aDB32";
 
 // ABI matching the deployed MedicalRecords.sol contract
 export const CONTRACT_ABI = [
@@ -31,9 +31,17 @@ export async function getContract(): Promise<Contract> {
   if (typeof window === "undefined" || !window.ethereum) {
     throw new Error("Wallet not detected. Please install MetaMask.");
   }
+
   const provider = new BrowserProvider(window.ethereum);
-  await provider.send("eth_requestAccounts", []);
+
+  const accounts = await provider.listAccounts();
+
+  if (accounts.length === 0) {
+    throw new Error("Please connect wallet first.");
+  }
+
   const signer = await provider.getSigner();
+
   return new Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 }
 
