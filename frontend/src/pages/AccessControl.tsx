@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { getContract, getReadContract } from "../blockchain/contract";
+import { getContract, getReadContract, getTotalRecords } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
@@ -74,11 +74,17 @@ export default function AccessControl() {
     setError(null);
     try {
       const contract = await getReadContract();
-      const total = Number(await contract.recordCounter()) - 1;
+      const total = await getTotalRecords(contract);
       const all: Permission[] = [];
       const now = Math.floor(Date.now() / 1000);
 
       for (let r = 1; r <= total; r++) {
+        // Owner is auto-granted access — skip displaying that grant
+        let ownerAddr = "";
+        try {
+          const rec: any = await contract.records(r);
+          ownerAddr = (rec.owner ?? rec[1] ?? "").toLowerCase();
+        } catch { /* ignore */ }
         let count = 0;
         try {
           count = Number(await contract.getAccessCount(r));
@@ -100,6 +106,8 @@ export default function AccessControl() {
             const grantedAt: bigint = g.grantedAt ?? g[1];
             const expiryTime: bigint = g.expiryTime ?? g[2];
             const isRevoked: boolean = g.isRevoked ?? g[3];
+            // Skip the contract's automatic owner-self-grant
+            if (ownerAddr && grantedTo.toLowerCase() === ownerAddr) continue;
             const status: AccessStatus = isRevoked
               ? "revoked"
               : Number(expiryTime) > 0 && Number(expiryTime) < now

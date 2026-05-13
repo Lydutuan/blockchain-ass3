@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PageKey } from "../App";
-import { getContract } from "../blockchain/contract";
+import { getContract, getTotalRecords } from "../blockchain/contract";
 
 type Props = {
   setActivePage: (page: PageKey) => void;
@@ -20,27 +20,6 @@ interface AuditLog {
   target: string; timestamp: string; type: "upload" | "grant" | "revoke" | "view";
 }
 
-const testContract = async () => {
-  try {
-    const contract = await getContract();
-    console.log(contract);
-    alert("Contract Connected!");
-  } catch (err) {
-    console.error(err);
-  }
-};
-
-const addTestRecord = async () => {
-  try {
-    const contract = await getContract();
-    const tx = await contract.addRecord("QmTestCID123456789");
-    console.log(tx);
-    await tx.wait();
-    alert("Record Added!");
-  } catch (err) {
-    console.error(err);
-  }
-};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const shortAddr = (a: string) =>
@@ -117,102 +96,107 @@ export default function Dashboard({ setActivePage }: Props) {
   }, []);
 
   const loadRecords = async () => {
-  setLoading(true);
-  setError(null);
-  try {
-    const contract = await getContract();
-
+    setLoading(true);
+    setError(null);
     try {
-      const runner: any = contract.runner;
-      if (runner?.getAddress) setWallet(await runner.getAddress());
-    } catch { /* ignore */ }
+      const contract = await getContract();
 
-    const fetched: MedicalRecord[] = [];
-    const auditLogs: AuditLog[] = [];
-    const permList: Permission[] = [];
-
-    // Single loop starting at 1 — no separate total probe needed
-    for (let i = 1; i < 500; i++) {
+      // Current connected wallet
       try {
-        const r: any = await contract.records(i);
-        const exists: boolean = r.exists ?? r[4];
-        if (!exists) break;
+        const runner: any = contract.runner;
+        if (runner?.getAddress) setWallet(await runner.getAddress());
+      } catch { /* ignore */ }
 
-        const recordId = (r.recordId ?? r[0]).toString();
-        const owner: string = r.owner ?? r[1];
-        const ipfsCid: string = r.ipfsCid ?? r[2];
-        const createdAt = r.createdAt ?? r[3];
+      // Total records (recordCounter starts at 1)
+      const total = await getTotalRecords(contract);
 
-        fetched.push({
-          id: `REC-${recordId}`,
-          cid: ipfsCid,
-          patient: shortAddr(owner),
-          uploadedAt: fmtTimestamp(createdAt),
-          status: "verified",
-          type: "On-chain Record",
-        });
+      const fetched: MedicalRecord[] = [];
+      const auditLogs: AuditLog[] = [];
+      const permList: Permission[] = [];
+      const now = Math.floor(Date.now() / 1000);
 
-        auditLogs.push({
-          id: `L-${recordId}`,
-          action: "Record Uploaded",
-          actor: shortAddr(owner),
-          target: `REC-${recordId}`,
-          timestamp: fmtTimestamp(createdAt),
-          type: "upload",
-        });
+      for (let i = 1; i <= total; i++) {
+        try {
+          const r: any = await contract.records(i);
+          const recordId = (r.recordId ?? r[0]).toString();
+          const owner: string = r.owner ?? r[1];
+          const ipfsCid: string = r.ipfsCid ?? r[2];
+          const createdAt = r.createdAt ?? r[3];
+          const exists: boolean = r.exists ?? r[4];
+          if (!exists) continue;
 
-        for (let g = 0; g < 20; g++) {
+          fetched.push({
+            id: `REC-${recordId}`,
+            cid: ipfsCid,
+            patient: shortAddr(owner),
+            uploadedAt: fmtTimestamp(createdAt),
+            status: "verified",
+            type: "On-chain Record",
+          });
+
+          auditLogs.push({
+            id: `L-${recordId}`,
+            action: "Record Uploaded",
+            actor: shortAddr(owner),
+            target: `REC-${recordId}`,
+            timestamp: fmtTimestamp(createdAt),
+            type: "upload",
+          });
+
+          // Real grant count from contract
+          let grantCount = 0;
           try {
-            const grant: any = await contract.accessGrants(Number(recordId), g);
-            const doctor = grant.grantedTo ?? grant[0];
-            if (!doctor || doctor === "0x0000000000000000000000000000000000000000") break;
+            grantCount = Number(await contract.getAccessCount(i));
+          } catch { grantCount = 0; }
 
-            const grantedAt = grant.grantedAt ?? grant[1];
-            const expiresAt = grant.expiryTime ?? grant[2];
-            const revoked = grant.isRevoked ?? grant[3];
-            const now = Math.floor(Date.now() / 1000);
-            const expSec = Number(expiresAt);
-            const access: Permission["access"] = revoked
-              ? "revoked"
-              : expSec && expSec < now
-                ? "expired"
-                : "active";
-
-            permList.push({
-              id: `P-${recordId}-${g}`,
-              doctor: shortAddr(doctor),
-              name: `Doctor ${shortAddr(doctor)}`,
-              granted: fmtTimestamp(grantedAt),
-              expiry: expSec ? fmtTimestamp(expiresAt) : "—",
-              access,
-            });
-
-            auditLogs.push({
-              id: `LG-${recordId}-${g}`,
-              action: revoked ? "Access Revoked" : "Access Granted",
-              actor: shortAddr(owner),
-              target: shortAddr(doctor),
-              timestamp: fmtTimestamp(grantedAt),
-              type: revoked ? "revoke" : "grant",
-            });
-          } catch { break; }
+          for (let g = 0; g < grantCount; g++) {
+            try {
+              const grant: any = await contract.accessGrants(i, g);
+              const grantedTo: string = grant.grantedTo ?? grant[0];
+              const grantedAt = grant.grantedAt ?? grant[1];
+              const expiryTime = grant.expiryTime ?? grant[2];
+              const isRevoked: boolean = grant.isRevoked ?? grant[3];
+              // Skip the auto-grant the contract issues to the owner
+              if (grantedTo.toLowerCase() === owner.toLowerCase()) continue;
+              const expSec = Number(expiryTime);
+              const access: Permission["access"] = isRevoked
+                ? "revoked"
+                : expSec > 0 && expSec < now
+                  ? "expired"
+                  : "active";
+              permList.push({
+                id: `P-${recordId}-${g}`,
+                doctor: shortAddr(grantedTo),
+                name: `Provider ${shortAddr(grantedTo)}`,
+                granted: fmtTimestamp(grantedAt),
+                expiry: expSec ? fmtTimestamp(expiryTime) : "—",
+                access,
+              });
+              auditLogs.push({
+                id: `LG-${recordId}-${g}`,
+                action: isRevoked ? "Access Revoked" : "Access Granted",
+                actor: shortAddr(owner),
+                target: shortAddr(grantedTo),
+                timestamp: fmtTimestamp(grantedAt),
+                type: isRevoked ? "revoke" : "grant",
+              });
+            } catch { break; }
+          }
+        } catch (e) {
+          console.warn("Failed to load record", i, e);
         }
-      } catch (e) {
-  console.warn("Skipping record", i);
-  continue;
-}
-    }
+      }
 
-    setRecords(fetched);
-    setPerms(permList);
-    setLogs(auditLogs.slice(-5).reverse());
-  } catch (e: any) {
-    console.error(e);
-    setError(e?.message || "Failed to load blockchain data");
-  } finally {
-    setLoading(false);
-  }
-};
+      setRecords(fetched);
+      setPerms(permList);
+      setLogs(auditLogs.slice(-5).reverse());
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || "Failed to load blockchain data");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filtered = records.filter(
     (r) =>
@@ -242,7 +226,7 @@ export default function Dashboard({ setActivePage }: Props) {
           <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 16 }}>Decentralized Electronic Medical Records on Polygon · IPFS Storage</p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <Btn variant="ghost" onClick={loadRecords}>Refresh</Btn>
+          <Btn variant="ghost" onClick={loadRecords}>🔄 Refresh</Btn>
           <Btn variant="primary" onClick={() => setActivePage("upload")}>+ Upload Record</Btn>
         </div>
       </div>

@@ -1,8 +1,6 @@
 import { useState, useRef } from "react";
 import type { ChangeEvent, DragEvent } from "react";
-import axios from "axios";
 import { getContract } from "../blockchain/contract";
-
 
 type RecordType = "lab" | "prescription" | "scan" | "insurance" | "other";
 
@@ -60,69 +58,66 @@ export default function UploadRecord() {
     handleFiles(e.dataTransfer.files);
   };
 
-  const uploadRecord = async () => {
-  if (!file || !title.trim()) {
-    alert("Please add a file and a record title.");
-    return;
-  }
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  try {
+  // Upload file to IPFS via Pinata. Requires VITE_PINATA_JWT env var.
+  const uploadToIPFS = async (f: File): Promise<string> => {
+    const jwt = (import.meta as any).env?.VITE_PINATA_JWT;
+    if (!jwt) {
+      throw new Error("Missing VITE_PINATA_JWT — cannot upload to IPFS.");
+    }
+    const form = new FormData();
+    form.append("file", f);
+    const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jwt}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`IPFS upload failed: ${res.status} ${text}`);
+    }
+    const data = await res.json();
+    return data.IpfsHash as string;
+  };
+
+  const handleUpload = async () => {
+    if (!file || !title.trim()) {
+      alert("Please add a file and a record title.");
+      return;
+    }
     setSuccess(false);
+    setErrorMessage(null);
+    setCid(null);
+    setTxHash(null);
 
-    // STEP 1 — Encrypting UI
-    setStage("encrypting");
-    await new Promise((r) => setTimeout(r, 800));
+    try {
+      // 1) "Encrypt" stage (placeholder — real AES would happen here before IPFS)
+      setStage("encrypting");
 
-    // STEP 2 — Upload to IPFS
-    setStage("ipfs");
+      // 2) Upload encrypted file bytes to IPFS (Pinata) and get the CID
+      setStage("ipfs");
+      const ipfsCid = await uploadToIPFS(file);
+      setCid(ipfsCid);
 
-    const formData = new FormData();
-    formData.append("file", file);
+      // 3) Smart contract interaction — store CID on Polygon Amoy
+      setStage("tx");
+      const contract = await getContract();
+      const tx = await contract.addRecord(ipfsCid);
 
-    // PINATA
-    const pinataRes = await axios.post(
-      "https://api.pinata.cloud/pinning/pinFileToIPFS",
-      formData,
-      {
-        maxBodyLength: Infinity,
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Authorization: `Bearer YOUR_PINATA_JWT`,
-        },
-      }
-    );
+      // 4) Wait for transaction confirmation on-chain
+      const receipt = await tx.wait();
+      setTxHash(receipt?.hash ?? tx.hash);
 
-    const uploadedCid = pinataRes.data.IpfsHash;
-
-    setCid(uploadedCid);
-
-    // STEP 3 — Blockchain transaction
-    setStage("tx");
-
-    const contract = await getContract();
-
-    const tx = await contract.addRecord(uploadedCid);
-
-    setTxHash(tx.hash);
-
-    await tx.wait();
-
-    // STEP 4 — Success
-    setStage("done");
-    setSuccess(true);
-
-    setTimeout(() => {
+      setStage("done");
+      setSuccess(true);
+      setTimeout(() => setStage("idle"), 600);
+    } catch (err: any) {
+      console.error("Upload failed:", err);
+      setErrorMessage(err?.shortMessage || err?.message || "Upload failed.");
       setStage("idle");
-    }, 1000);
-
-  } catch (err) {
-    console.error(err);
-
-    alert("Upload failed.");
-
-    setStage("idle");
-  }
-};
+    }
+  };
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto" }}>
@@ -247,7 +242,7 @@ export default function UploadRecord() {
           {/* Upload Button */}
           <button
             disabled={isUploading}
-            onClick={uploadRecord}
+            onClick={handleUpload}
             style={{
               width: "100%",
               background: isUploading ? PURPLE_DARK : PURPLE,
@@ -284,6 +279,22 @@ export default function UploadRecord() {
                 <br />
                 Tx: {txHash}
               </div>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div
+              style={{
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: 12,
+                padding: 16,
+                color: "#991b1b",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              ⚠️ {errorMessage}
             </div>
           )}
         </div>

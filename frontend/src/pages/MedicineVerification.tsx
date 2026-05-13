@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getContract, getReadContract } from "../blockchain/contract";
+import { getReadContract } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
@@ -91,93 +91,89 @@ export default function MedicineVerification() {
     setTxHash("");
 
     try {
+      // The deployed MedicalRecords contract verifies on-chain medical records by ID.
+      // Strip non-digits so users can paste "REC-12" or "MED-VN-12".
+      const numericId = batchId.replace(/\D/g, "");
+      if (!numericId) throw new Error("Enter a numeric record ID (e.g. 1, 2, 3)");
+      const id = BigInt(numericId);
+
       const readContract = await getReadContract();
-      const m = await readContract.getMedicine(batchId.trim());
+      const r: any = await readContract.records(id);
+      const recordId: bigint = r.recordId ?? r[0];
+      const owner: string = r.owner ?? r[1];
+      const ipfsCid: string = r.ipfsCid ?? r[2];
+      const createdAt: bigint = r.createdAt ?? r[3];
+      const exists: boolean = r.exists ?? r[4];
 
-      const manufacturerAddr: string = m.manufacturerAddr ?? m[1];
-      const manufacturer: string = m.manufacturer ?? m[2];
-      const batchNumber: string = m.batchNumber ?? m[3];
-      const manufactureDate: bigint = m.manufactureDate ?? m[4];
-      const expiryDate: bigint = m.expiryDate ?? m[5];
-      const ipfsCid: string = m.ipfsCid ?? m[6];
-      const verified: boolean = m.verified ?? m[7];
-
-      const now = Math.floor(Date.now() / 1000);
-      const status: AuthStatus =
-        Number(expiryDate) > 0 && Number(expiryDate) < now ? "expired" : verified ? "authentic" : "suspicious";
-
-      // Send verification tx
-      let confirmedHash = "";
-      try {
-        const writeContract = await getContract();
-        const tx = await writeContract.verifyMedicine(batchId.trim());
-        setNotice(`Verification tx sent: ${tx.hash.slice(0, 12)}…`);
-        const rcpt = await tx.wait();
-        confirmedHash = rcpt?.hash ?? tx.hash;
-        setTxHash(confirmedHash);
-        setNotice(`✓ Verified on-chain (tx ${confirmedHash.slice(0, 10)}…)`);
-      } catch (txErr: any) {
-        setNotice(`Read-only verification (no tx submitted)`);
+      if (!exists || Number(recordId) === 0) {
+        throw new Error(`Record #${numericId} does not exist on-chain.`);
       }
 
-      // Pull events for traceability timeline
+      const status: AuthStatus = "authentic";
+      setNotice(`✓ Record #${recordId.toString()} verified on-chain`);
+
+      // Build traceability timeline from RecordCreated + AccessGranted/Revoked events
       const steps: TimelineStep[] = [];
       try {
         const provider = readContract.runner?.provider;
         if (provider) {
           const current = await provider.getBlockNumber();
           const fromBlock = Math.max(0, current - 100000);
-          const regs = await readContract.queryFilter(
-            readContract.filters.MedicineRegistered(batchId.trim()),
-            fromBlock,
-            current,
-          ).catch(() => []);
-          const vers = await readContract.queryFilter(
-            readContract.filters.MedicineVerified(batchId.trim()),
-            fromBlock,
-            current,
-          ).catch(() => []);
-          for (const e of regs as any[]) {
+          const [created, granted, revoked] = await Promise.all([
+            readContract.queryFilter(readContract.filters.RecordCreated(id), fromBlock, current).catch(() => []),
+            readContract.queryFilter(readContract.filters.AccessGranted(id), fromBlock, current).catch(() => []),
+            readContract.queryFilter(readContract.filters.AccessRevoked(id), fromBlock, current).catch(() => []),
+          ]);
+          for (const e of created as any[]) {
             steps.push({
-              step: "Manufactured",
-              date: fmtTime(Number(e.args?.timestamp ?? 0n)),
-              actor: shortAddr(e.args?.manufacturer ?? ""),
+              step: "Record Created",
+              date: fmtTime(Number(e.args?.timestamp ?? createdAt)),
+              actor: shortAddr(e.args?.owner ?? owner),
               hash: shortHash(e.transactionHash),
             });
           }
-          for (const e of vers as any[]) {
+          for (const e of granted as any[]) {
             steps.push({
-              step: "Verified",
+              step: "Access Granted",
               date: fmtTime(Number(e.args?.timestamp ?? 0n)),
-              actor: shortAddr(e.args?.verifier ?? ""),
+              actor: shortAddr(e.args?.grantedTo ?? ""),
               hash: shortHash(e.transactionHash),
             });
           }
+          for (const e of revoked as any[]) {
+            steps.push({
+              step: "Access Revoked",
+              date: fmtTime(Number(e.args?.timestamp ?? 0n)),
+              actor: shortAddr(e.args?.revokedFrom ?? ""),
+              hash: shortHash(e.transactionHash),
+            });
+          }
+          steps.sort((a, b) => a.date.localeCompare(b.date));
         }
       } catch { /* ignore timeline failure */ }
 
       setTimeline(steps);
       setResult({
-        medicineId: batchId.trim(),
-        drugName: batchId.trim(),
-        manufacturer,
-        manufacturerAddr,
-        batchId: batchNumber,
-        manufacturedDate: fmtDate(manufactureDate),
-        expiryDate: fmtDate(expiryDate),
+        medicineId: `REC-${recordId.toString()}`,
+        drugName: `Record #${recordId.toString()}`,
+        manufacturer: "MediLedger Network",
+        manufacturerAddr: owner,
+        batchId: ipfsCid.slice(0, 12),
+        manufacturedDate: fmtDate(createdAt),
+        expiryDate: "—",
         status,
         ipfsCid,
-        hash: confirmedHash || ipfsCid,
+        hash: ipfsCid,
       });
     } catch (e: any) {
-      setError(e?.shortMessage ?? e?.message ?? "Medicine not found on-chain");
+      setError(e?.shortMessage ?? e?.message ?? "Record not found on-chain");
     } finally {
       setVerifying(false);
     }
   };
 
   const handleScan = () => {
-    setBatchId("MED-VN-0042");
+    setBatchId("1");
   };
 
   return (
