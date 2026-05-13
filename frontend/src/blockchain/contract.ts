@@ -3,7 +3,7 @@ import { BrowserProvider, Contract} from "ethers";
 // Deployed MedicalRecords contract address (Polygon Amoy). Override via VITE_CONTRACT_ADDRESS.
 export const CONTRACT_ADDRESS =
   (import.meta as any).env?.VITE_CONTRACT_ADDRESS ||
-  "0xd035ee308B4588AE490D213D63809e53bd1aDB32";
+  "0x1a1340BEEEcB6F6b6DDEf266A5777f509948a263";
 
 // ABI matching the deployed MedicalRecords.sol contract
 export const CONTRACT_ABI = [
