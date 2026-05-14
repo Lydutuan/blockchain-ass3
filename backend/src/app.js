@@ -10,6 +10,9 @@ app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
 
+const testRoutes = require("./routes/testRoutes");
+
+app.use("/api/test", testRoutes);
 app.get('/',(req,res)=>res.send('API Running'));
 
 module.exports=app;
