@@ -8,7 +8,11 @@ const {
   "../services/ipfsService"
 );
 
-const uploadMedicalRecord =
+const contract = require(
+  "../blockchain/contract"
+);
+
+exports.uploadMedicalRecord =
   async (req, res) => {
     try {
       const file = req.file;
@@ -23,6 +27,7 @@ const uploadMedicalRecord =
         "Uploading to IPFS..."
       );
 
+      // STEP 1 — Upload to IPFS
       const ipfsHash =
         await uploadToIPFS(
           file.buffer,
@@ -34,10 +39,33 @@ const uploadMedicalRecord =
         ipfsHash
       );
 
+      // STEP 2 — Save on blockchain
+      console.log(
+        "Sending blockchain transaction..."
+      );
+
+      const tx =
+        await contract.addRecord(
+          ipfsHash
+        );
+
+      console.log(
+        "Waiting for confirmation..."
+      );
+
+      const receipt =
+        await tx.wait();
+
+      console.log(
+        "BLOCKCHAIN SUCCESS:",
+        tx.hash
+      );
+
+      // STEP 3 — Save metadata in MongoDB
       const record =
         await MedicalRecord.create({
           patientWallet:
-            req.body.patientWallet,
+            tx.from,
 
           doctorWallet:
             req.body.doctorWallet,
@@ -50,12 +78,18 @@ const uploadMedicalRecord =
 
           ipfsHash,
 
+          txHash: tx.hash,
+
           encrypted: false,
         });
 
       res.json({
         success: true,
+
         ipfsHash,
+
+        txHash: tx.hash,
+
         record,
       });
     } catch (err) {
@@ -66,7 +100,4 @@ const uploadMedicalRecord =
       });
     }
   };
-
-module.exports = {
-  uploadMedicalRecord,
-};
+  

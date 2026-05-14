@@ -1,40 +1,30 @@
 const mongoose = require("mongoose");
 
-const MedicalRecordSchema = new mongoose.Schema(
-  {
-    patientWallet: {
-      type: String,
-      required: true,
-      index: true,
-    },
+const MedicalRecordSchema =
+  new mongoose.Schema(
+    {
+      patientWallet: String,
 
-    doctorWallet: {
-      type: String,
-      required: true,
-    },
+      doctorWallet: String,
 
-    fileName: {
-      type: String,
-      required: true,
-    },
+      fileName: String,
 
-    fileType: String,
+      fileType: String,
 
-    ipfsHash: {
-      type: String,
-      required: true,
-    },
+      ipfsHash: String,
 
-    transactionHash: {
-      type: String,
-    },
+      txHash: String,
 
-    encrypted: {
-      type: Boolean,
-      default: true,
+      recordId: Number,
+
+      encrypted: Boolean,
     },
-  },
-  { timestamps: true }
+    {
+      timestamps: true,
+    }
+  );
+
+module.exports = mongoose.model(
+  "MedicalRecord",
+  MedicalRecordSchema
 );
-
-module.exports = mongoose.model("MedicalRecord", MedicalRecordSchema);
