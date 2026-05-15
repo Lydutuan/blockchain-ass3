@@ -252,10 +252,6 @@ export default function MedicineVerification() {
     }
   };
 
-  const handleScan = () => {
-    setBatchId("1");
-  };
-
   return (
     <>
       <div style={{ marginBottom: 28 }}>
@@ -280,33 +276,18 @@ export default function MedicineVerification() {
             <input
               value={batchId}
               onChange={(e) => setBatchId(e.target.value)}
-              placeholder="e.g. MED-1001"
+
               style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 14, outline: "none", color: "#1e293b", boxSizing: "border-box" }}
             />
             <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              
               <Btn variant="primary" onClick={handleVerify} disabled={verifying || !batchId.trim()}>
                 {verifying ? "Verifying…" : "Verify"}
               </Btn>
             </div>
           </div>
 
-          <div
-            style={{
-              border: `2px dashed ${PURPLE}`,
-              borderRadius: 12,
-              background: PURPLE_SOFT,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 24,
-              cursor: "pointer",
-            }}
-          >
-            <div style={{ fontSize: 36 }}>📱</div>
-            <div style={{ fontWeight: 700, color: PURPLE_DARK, marginTop: 8 }}>Upload QR Code</div>
-            <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>PNG, JPG, or scan with camera</div>
-          </div>
+          
         </div>
       </Card>
 

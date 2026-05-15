@@ -9,8 +9,6 @@ const normalizeBatchId = (value) => {
   return String(value).trim().toLowerCase();
 };
 
-const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 // Fetch medicine verification data by batch ID and audit the lookup
 router.get("/verify", async (req, res) => {
   try {
@@ -21,7 +19,7 @@ router.get("/verify", async (req, res) => {
       return res.status(400).json({ success: false, error: "batchId is required" });
     }
 
-    const record = await MedicineVerification.findOne({ batchId: new RegExp(`^${escapeRegExp(batchId)}$`, "i") });
+    const record = await MedicineVerification.findOne({ batchId });
 
     await AuditLog.create({
       action: "MedicineLookup",

@@ -169,7 +169,14 @@ export default function AuditLogs() {
       }
 
       all.sort((a, b) => (b.blockNumber || 0) - (a.blockNumber || 0));
-      setLogs(all.slice(0, 50));
+      const seen = new Set<string>();
+      const unique = all.filter((entry) => {
+        const key = `${entry.type}|${entry.txHash || entry.id}|${entry.recordId}|${entry.wallet}|${entry.timestamp}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setLogs(unique.slice(0, 50));
     } catch (err: any) {
       setError(err?.message ?? "Failed to load blockchain logs");
     } finally {
