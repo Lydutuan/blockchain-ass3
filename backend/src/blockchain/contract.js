@@ -4,8 +4,15 @@ const abi = require("./abi.json");
 
 const provider =
   new ethers.JsonRpcProvider(
-    process.env.RPC_URL
+    process.env.RPC_URL, 
+    undefined,
+    {
+      polling: true,
+      pollingInterval: 4000,
+    }
   );
+
+  provider.polling = true; 
 
 const wallet = new ethers.Wallet(
   process.env.PRIVATE_KEY,

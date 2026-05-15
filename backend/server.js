@@ -1,5 +1,9 @@
 require("dotenv").config();
 
+require("./src/listeners/medicalListener");
+
+
+
 const mongoose = require("mongoose");
 const app = require("./src/app");
 
