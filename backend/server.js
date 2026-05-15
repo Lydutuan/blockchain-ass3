@@ -25,7 +25,7 @@ const PORT = process.env.PORT || 5000;
 
 const sampleMedicineData = [
   {
-    batchId: "MED-1001",
+    batchId: "med-1001",
     recordId: 1,
     medicineName: "Aspirin 500mg",
     qrCode: "QR-1001",
@@ -39,7 +39,7 @@ const sampleMedicineData = [
     metadata: { lot: "A1001" },
   },
   {
-    batchId: "MED-1002",
+    batchId: "med-1002",
     recordId: 2,
     medicineName: "Paracetamol 650mg",
     qrCode: "QR-1002",
@@ -53,7 +53,7 @@ const sampleMedicineData = [
     metadata: { lot: "P2002" },
   },
   {
-    batchId: "MED-1003",
+    batchId: "med-1003",
     recordId: 3,
     medicineName: "Amoxicillin 250mg",
     qrCode: "QR-1003",
@@ -67,7 +67,7 @@ const sampleMedicineData = [
     metadata: { lot: "A3003" },
   },
   {
-    batchId: "MED-1004",
+    batchId: "med-1004",
     recordId: 4,
     medicineName: "Ibuprofen 400mg",
     qrCode: "QR-1004",
@@ -81,7 +81,7 @@ const sampleMedicineData = [
     metadata: { lot: "I4004" },
   },
   {
-    batchId: "MED-1005",
+    batchId: "med-1005",
     recordId: 5,
     medicineName: "Metformin 500mg",
     qrCode: "QR-1005",
@@ -95,7 +95,7 @@ const sampleMedicineData = [
     metadata: { lot: "M5005" },
   },
   {
-    batchId: "MED-1006",
+    batchId: "med-1006",
     recordId: 6,
     medicineName: "Omeprazole 20mg",
     qrCode: "QR-1006",
@@ -109,7 +109,7 @@ const sampleMedicineData = [
     metadata: { lot: "O6006" },
   },
   {
-    batchId: "MED-1007",
+    batchId: "med-1007",
     recordId: 7,
     medicineName: "Lisinopril 10mg",
     qrCode: "QR-1007",
@@ -123,7 +123,7 @@ const sampleMedicineData = [
     metadata: { lot: "L7007" },
   },
   {
-    batchId: "MED-1008",
+    batchId: "med-1008",
     recordId: 8,
     medicineName: "Atorvastatin 20mg",
     qrCode: "QR-1008",
@@ -137,7 +137,7 @@ const sampleMedicineData = [
     metadata: { lot: "A8008" },
   },
   {
-    batchId: "MED-1009",
+    batchId: "med-1009",
     recordId: 9,
     medicineName: "Citalopram 20mg",
     qrCode: "QR-1009",
@@ -151,7 +151,7 @@ const sampleMedicineData = [
     metadata: { lot: "C9009" },
   },
   {
-    batchId: "MED-1010",
+    batchId: "med-1010",
     recordId: 10,
     medicineName: "Simvastatin 40mg",
     qrCode: "QR-1010",

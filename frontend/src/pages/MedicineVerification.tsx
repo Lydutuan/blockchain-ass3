@@ -280,11 +280,10 @@ export default function MedicineVerification() {
             <input
               value={batchId}
               onChange={(e) => setBatchId(e.target.value)}
-              placeholder="e.g. MED-VN-0042"
+              placeholder="e.g. MED-1001"
               style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 14, outline: "none", color: "#1e293b", boxSizing: "border-box" }}
             />
             <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-              <Btn variant="outline" onClick={handleScan}>Scan QR</Btn>
               <Btn variant="primary" onClick={handleVerify} disabled={verifying || !batchId.trim()}>
                 {verifying ? "Verifying…" : "Verify"}
               </Btn>
