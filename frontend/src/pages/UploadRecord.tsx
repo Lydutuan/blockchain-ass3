@@ -16,9 +16,9 @@ type UploadStage =
   | "done";
 
 const STAGE_LABEL: Record<UploadStage, string> = {
-  idle: "Encrypt & Upload Record",
-  encrypting: "Encrypting...",
-  ipfs: "Storing on IPFS...",
+  idle: "Upload through backend",
+  encrypting: "Sending file to backend...",
+  ipfs: "Backend storing on IPFS...",
   tx: "Writing transaction...",
   done: "Uploaded ✓",
 };
@@ -60,25 +60,31 @@ export default function UploadRecord() {
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Upload file to IPFS via Pinata. Requires VITE_PINATA_JWT env var.
-  const uploadToIPFS = async (f: File): Promise<string> => {
-    const jwt = (import.meta as any).env?.VITE_PINATA_JWT;
-    if (!jwt) {
-      throw new Error("Missing VITE_PINATA_JWT — cannot upload to IPFS.");
-    }
+  const uploadToBackend = async (f: File): Promise<string> => {
+    const apiUrl = (import.meta as any).env?.VITE_API_URL || "http://localhost:5000";
     const form = new FormData();
     form.append("file", f);
-    const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+    form.append("title", title);
+    form.append("hospital", hospital);
+    form.append("description", description);
+    form.append("recordType", recordType);
+
+    const res = await fetch(`${apiUrl}/api/upload`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${jwt}` },
       body: form,
     });
+
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`IPFS upload failed: ${res.status} ${text}`);
+      throw new Error(`Backend upload failed: ${res.status} ${text}`);
     }
+
     const data = await res.json();
-    return data.IpfsHash as string;
+    if (!data.success) {
+      throw new Error(data.error || "Upload failed on backend.");
+    }
+
+    return data.ipfsHash as string;
   };
 
   const handleUpload = async () => {
@@ -92,20 +98,16 @@ export default function UploadRecord() {
     setTxHash(null);
 
     try {
-      // 1) "Encrypt" stage (placeholder — real AES would happen here before IPFS)
       setStage("encrypting");
 
-      // 2) Upload encrypted file bytes to IPFS (Pinata) and get the CID
       setStage("ipfs");
-      const ipfsCid = await uploadToIPFS(file);
+      const ipfsCid = await uploadToBackend(file);
       setCid(ipfsCid);
 
-      // 3) Smart contract interaction — store CID on Polygon Amoy
       setStage("tx");
       const contract = await getContract();
       const tx = await contract.addRecord(ipfsCid);
 
-      // 4) Wait for transaction confirmation on-chain
       const receipt = await tx.wait();
       setTxHash(receipt?.hash ?? tx.hash);
 
@@ -127,7 +129,7 @@ export default function UploadRecord() {
           Upload Medical Record
         </h1>
         <p style={{ color: "#64748b", marginTop: 6, fontSize: 14 }}>
-          Securely upload encrypted healthcare documents to IPFS and register metadata on Polygon.
+          Securely send healthcare documents to the backend, encrypt them, and anchor the CID on Polygon.
         </p>
       </div>
 
@@ -307,8 +309,8 @@ export default function UploadRecord() {
               <Badge color="#059669" bg="#d1fae5">🔒 Secure</Badge>
             </div>
             <p style={{ color: "#475569", fontSize: 13, marginTop: 12, lineHeight: 1.5 }}>
-              Client-side <b>AES-256</b> encryption enabled. Your file is encrypted in your
-              browser before leaving the device.
+              Server-side <b>AES-256</b> encryption is applied by the backend before your file
+              is stored on IPFS.
             </p>
           </Card>
 

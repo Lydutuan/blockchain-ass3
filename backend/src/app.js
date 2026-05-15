@@ -5,7 +5,13 @@ const morgan = require('morgan');
 
 const app = express();
 
-app.use(cors());
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+
+app.use(
+  cors({
+    origin: FRONTEND_URL,
+  })
+);
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());

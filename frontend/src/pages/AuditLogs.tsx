@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { getReadContract } from "../blockchain/contract";
+import { getReadContract, queryFilterChunks } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
@@ -75,12 +75,12 @@ export default function AuditLogs() {
 
       const current = await provider.getBlockNumber();
       setLatestBlock(`#${current.toLocaleString()}`);
-      const fromBlock = Math.max(0, current - 100000);
+      const fromBlock = Math.max(0, current - 5000);
 
       const [createdEv, grantedEv, revokedEv] = await Promise.all([
-        contract.queryFilter(contract.filters.RecordCreated(), fromBlock, current).catch(() => []),
-        contract.queryFilter(contract.filters.AccessGranted(), fromBlock, current).catch(() => []),
-        contract.queryFilter(contract.filters.AccessRevoked(), fromBlock, current).catch(() => []),
+        queryFilterChunks(contract, contract.filters.RecordCreated(), fromBlock, current).catch(() => []),
+        queryFilterChunks(contract, contract.filters.AccessGranted(), fromBlock, current).catch(() => []),
+        queryFilterChunks(contract, contract.filters.AccessRevoked(), fromBlock, current).catch(() => []),
       ]);
 
       const all: LogEntry[] = [];

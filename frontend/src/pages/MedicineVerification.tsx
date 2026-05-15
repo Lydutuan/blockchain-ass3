@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getReadContract } from "../blockchain/contract";
+import { getReadContract, queryFilterChunks } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
@@ -118,11 +118,11 @@ export default function MedicineVerification() {
         const provider = readContract.runner?.provider;
         if (provider) {
           const current = await provider.getBlockNumber();
-          const fromBlock = Math.max(0, current - 100000);
+          const fromBlock = Math.max(0, current - 5000);
           const [created, granted, revoked] = await Promise.all([
-            readContract.queryFilter(readContract.filters.RecordCreated(id), fromBlock, current).catch(() => []),
-            readContract.queryFilter(readContract.filters.AccessGranted(id), fromBlock, current).catch(() => []),
-            readContract.queryFilter(readContract.filters.AccessRevoked(id), fromBlock, current).catch(() => []),
+            queryFilterChunks(readContract, readContract.filters.RecordCreated(id), fromBlock, current).catch(() => []),
+            queryFilterChunks(readContract, readContract.filters.AccessGranted(id), fromBlock, current).catch(() => []),
+            queryFilterChunks(readContract, readContract.filters.AccessRevoked(id), fromBlock, current).catch(() => []),
           ]);
           for (const e of created as any[]) {
             steps.push({
