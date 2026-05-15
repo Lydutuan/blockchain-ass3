@@ -1,21 +1,16 @@
 const express = require("express");
-
 const router = express.Router();
 
-const upload = require(
-  "../middleware/upload"
-);
+const uploadController = require("../controllers/uploadController");
+const multer = require("multer");
 
-const {
-  uploadMedicalRecord,
-} = require(
-  "../controllers/uploadController"
-);
+const upload = multer({ storage: multer.memoryStorage() });
 
+// Upload file route
 router.post(
-  "/",
+  "/upload",
   upload.single("file"),
-  uploadMedicalRecord
+  uploadController.uploadFile
 );
 
 module.exports = router;

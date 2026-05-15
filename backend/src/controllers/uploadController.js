@@ -1,103 +1,87 @@
-const MedicalRecord = require(
-  "../models/MedicalRecord"
-);
+const MedicalRecord = require("../models/MedicalRecord");
+const AuditLog = require("../models/AuditLog");
 
-const {
-  uploadToIPFS,
-} = require(
-  "../services/ipfsService"
-);
+const { encryptBuffer } = require("../utils/encryption");
+const pinata = require("../utils/pinata");
+const blockchain = require("../blockchain/contract");
 
-const contract = require(
-  "../blockchain/contract"
-);
+/**
+ * =========================
+ * UPLOAD MEDICAL FILE
+ * =========================
+ */
+exports.uploadFile = async (req, res) => {
+  try {
+    const file = req.file;
 
-exports.uploadMedicalRecord =
-  async (req, res) => {
-    try {
-      const file = req.file;
-
-      if (!file) {
-        return res.status(400).json({
-          error: "No file uploaded",
-        });
-      }
-
-      console.log(
-        "Uploading to IPFS..."
-      );
-
-      // STEP 1 — Upload to IPFS
-      const ipfsHash =
-        await uploadToIPFS(
-          file.buffer,
-          file.originalname
-        );
-
-      console.log(
-        "IPFS SUCCESS:",
-        ipfsHash
-      );
-
-      // STEP 2 — Save on blockchain
-      console.log(
-        "Sending blockchain transaction..."
-      );
-
-      const tx =
-        await contract.addRecord(
-          ipfsHash
-        );
-
-      console.log(
-        "Waiting for confirmation..."
-      );
-
-      const receipt =
-        await tx.wait();
-
-      console.log(
-        "BLOCKCHAIN SUCCESS:",
-        tx.hash
-      );
-
-      // STEP 3 — Save metadata in MongoDB
-      const record =
-        await MedicalRecord.create({
-          patientWallet:
-            tx.from,
-
-          doctorWallet:
-            req.body.doctorWallet,
-
-          fileName:
-            file.originalname,
-
-          fileType:
-            file.mimetype,
-
-          ipfsHash,
-
-          txHash: tx.hash,
-
-          encrypted: false,
-        });
-
-      res.json({
-        success: true,
-
-        ipfsHash,
-
-        txHash: tx.hash,
-
-        record,
-      });
-    } catch (err) {
-      console.error(err);
-
-      res.status(500).json({
-        error: err.message,
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded",
       });
     }
-  };
-  
+
+    // =========================
+    // 1. ENCRYPT FILE
+    // =========================
+    const { encryptedData, key, iv, authTag } = encryptBuffer(file.buffer);
+
+    // =========================
+    // 2. UPLOAD TO IPFS (PINATA)
+    // =========================
+    const ipfsResult = await pinata.uploadBuffer(encryptedData);
+    const ipfsHash = ipfsResult.IpfsHash;
+
+    // =========================
+    // 3. SAVE TO MONGODB
+    // =========================
+    const record = await MedicalRecord.create({
+      ipfsHash,
+      encryptedKey: key.toString("hex"),
+      iv: iv.toString("hex"),
+      authTag: authTag.toString("hex"),
+      createdAt: new Date(),
+    });
+
+    // =========================
+    // 4. WRITE TO BLOCKCHAIN
+    // =========================
+    const tx = await blockchain.addRecord(ipfsHash);
+    const receipt = await tx.wait();
+
+    const blockchainRecordId =
+      receipt?.logs?.[0]?.args?.recordId?.toString() || "0";
+
+    // =========================
+    // 5. AUDIT LOG
+    // =========================
+    await AuditLog.create({
+      action: "RecordCreated",
+      performedBy: req.user?.address || "system",
+      txHash: receipt.hash,
+
+      medicalRecordId: record._id.toString(),
+      blockchainRecordId,
+      ipfsHash,
+    });
+
+    // =========================
+    // 6. RESPONSE
+    // =========================
+    return res.status(200).json({
+      success: true,
+      recordId: record._id, // IMPORTANT: use this for decrypt
+      ipfsHash,
+      txHash: receipt.hash,
+      blockchainRecordId,
+    });
+
+  } catch (err) {
+    console.error("UPLOAD ERROR:", err);
+
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+};
