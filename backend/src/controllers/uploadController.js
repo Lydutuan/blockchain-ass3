@@ -3,7 +3,6 @@ const AuditLog = require("../models/AuditLog");
 
 const { encryptBuffer } = require("../utils/encryption");
 const pinata = require("../utils/pinata");
-const blockchain = require("../blockchain/contract");
 
 /**
  * =========================
@@ -13,11 +12,19 @@ const blockchain = require("../blockchain/contract");
 exports.uploadFile = async (req, res) => {
   try {
     const file = req.file;
+    const { title, hospital, description, recordType, uploaderAddress } = req.body;
 
     if (!file) {
       return res.status(400).json({
         success: false,
         error: "No file uploaded",
+      });
+    }
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Record title is required",
       });
     }
 
@@ -36,46 +43,45 @@ exports.uploadFile = async (req, res) => {
     // 3. SAVE TO MONGODB
     // =========================
     const record = await MedicalRecord.create({
+      patientWallet: uploaderAddress || null,
+      fileName: file.originalname,
+      fileType: file.mimetype,
+      title,
+      hospital,
+      description,
+      recordType,
       ipfsHash,
+      encrypted: true,
+      createdAt: new Date(),
       encryptedKey: key.toString("hex"),
       iv: iv.toString("hex"),
       authTag: authTag.toString("hex"),
-      createdAt: new Date(),
     });
 
     // =========================
-    // 4. WRITE TO BLOCKCHAIN
-    // =========================
-    const tx = await blockchain.addRecord(ipfsHash);
-    const receipt = await tx.wait();
-
-    const blockchainRecordId =
-      receipt?.logs?.[0]?.args?.recordId?.toString() || "0";
-
-    // =========================
-    // 5. AUDIT LOG
+    // 4. AUDIT LOG
     // =========================
     await AuditLog.create({
-      action: "RecordCreated",
-      performedBy: req.user?.address || "system",
-      txHash: receipt.hash,
-
-      medicalRecordId: record._id.toString(),
-      blockchainRecordId,
+      action: "RecordUploaded",
+      performedBy: uploaderAddress || "anonymous",
+      txHash: null,
       ipfsHash,
+      recordId: record._id.toString(),
+      metadata: {
+        title,
+        hospital,
+        recordType,
+      },
     });
 
     // =========================
-    // 6. RESPONSE
+    // 5. RESPONSE
     // =========================
     return res.status(200).json({
       success: true,
-      recordId: record._id, // IMPORTANT: use this for decrypt
+      recordId: record._id,
       ipfsHash,
-      txHash: receipt.hash,
-      blockchainRecordId,
     });
-
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
 

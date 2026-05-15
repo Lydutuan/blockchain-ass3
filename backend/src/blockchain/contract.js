@@ -25,4 +25,21 @@ const contract = new ethers.Contract(
   wallet
 );
 
+provider.getCode(process.env.CONTRACT_ADDRESS)
+  .then((code) => {
+    if (code === "0x") {
+      console.error(
+        "ERROR: No contract code found at CONTRACT_ADDRESS on RPC_URL.",
+        process.env.CONTRACT_ADDRESS,
+        process.env.RPC_URL
+      );
+      console.error(
+        "Please verify the deployed contract address and chain network."
+      );
+    }
+  })
+  .catch((err) => {
+    console.error("ERROR: Failed to verify contract code:", err.message || err);
+  });
+
 module.exports = contract;

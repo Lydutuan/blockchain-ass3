@@ -11,7 +11,7 @@ const AuditLogSchema =
 
       ipfsHash: String,
 
-      recordId: Number,
+      recordId: String,
 
       blockNumber: Number,
 
