@@ -62,12 +62,26 @@ export default function UploadRecord() {
 
   const uploadToBackend = async (f: File): Promise<string> => {
     const apiUrl = (import.meta as any).env?.VITE_API_URL || "http://localhost:5000";
+    
+    // Get current user address from wallet
+    let uploaderAddress = null;
+    try {
+      const contract = await getContract();
+      const signer = await contract.runner.provider.getSigner();
+      uploaderAddress = await signer.getAddress();
+    } catch (err) {
+      console.warn("Could not get wallet address:", err);
+    }
+
     const form = new FormData();
     form.append("file", f);
     form.append("title", title);
     form.append("hospital", hospital);
     form.append("description", description);
     form.append("recordType", recordType);
+    if (uploaderAddress) {
+      form.append("uploaderAddress", uploaderAddress);
+    }
 
     const res = await fetch(`${apiUrl}/api/upload`, {
       method: "POST",

@@ -11,7 +11,10 @@ const pinata = require("../utils/pinata");
  */
 exports.uploadFile = async (req, res) => {
   try {
+    // Get file from multer - with .single("file"), it's in req.file
     const file = req.file;
+    
+    // Get form fields from req.body
     const { title, hospital, description, recordType, uploaderAddress } = req.body;
 
     if (!file) {
@@ -36,51 +39,70 @@ exports.uploadFile = async (req, res) => {
     // =========================
     // 2. UPLOAD TO IPFS (PINATA)
     // =========================
-    const ipfsResult = await pinata.uploadBuffer(encryptedData);
-    const ipfsHash = ipfsResult.IpfsHash;
+    let ipfsHash;
+    try {
+      const ipfsResult = await pinata.uploadBuffer(encryptedData);
+      ipfsHash = ipfsResult.IpfsHash;
+    } catch (pinataErr) {
+      console.error("PINATA ERROR:", pinataErr.message);
+      return res.status(500).json({
+        success: false,
+        error: "Failed to upload to IPFS: " + pinataErr.message,
+      });
+    }
 
     // =========================
-    // 3. SAVE TO MONGODB
+    // 3. SAVE TO MONGODB (optional if connected)
     // =========================
-    const record = await MedicalRecord.create({
-      patientWallet: uploaderAddress || null,
-      fileName: file.originalname,
-      fileType: file.mimetype,
-      title,
-      hospital,
-      description,
-      recordType,
-      ipfsHash,
-      encrypted: true,
-      createdAt: new Date(),
-      encryptedKey: key.toString("hex"),
-      iv: iv.toString("hex"),
-      authTag: authTag.toString("hex"),
-    });
-
-    // =========================
-    // 4. AUDIT LOG
-    // =========================
-    await AuditLog.create({
-      action: "RecordUploaded",
-      performedBy: uploaderAddress || "anonymous",
-      txHash: null,
-      ipfsHash,
-      recordId: record._id.toString(),
-      metadata: {
+    let record = null;
+    try {
+      record = await MedicalRecord.create({
+        patientWallet: uploaderAddress || null,
+        fileName: file.originalname,
+        fileType: file.mimetype,
         title,
         hospital,
+        description,
         recordType,
-      },
-    });
+        ipfsHash,
+        encrypted: true,
+        createdAt: new Date(),
+        encryptedKey: key.toString("hex"),
+        iv: iv.toString("hex"),
+        authTag: authTag.toString("hex"),
+      });
+    } catch (dbErr) {
+      console.warn("MongoDB save failed (continuing without DB):", dbErr.message);
+    }
 
     // =========================
-    // 5. RESPONSE
+    // 4. AUDIT LOG (optional if connected)
+    // =========================
+    try {
+      await AuditLog.create({
+        action: "RecordUploaded",
+        performedBy: uploaderAddress || "anonymous",
+        txHash: null,
+        ipfsHash,
+        recordId: record?._id?.toString() || "unknown",
+        metadata: {
+          title,
+          hospital,
+          recordType,
+        },
+      });
+    } catch (auditErr) {
+      console.warn("Audit log failed:", auditErr.message);
+    }
+
+    // =========================
+    // 5. RESPONSE - SUCCESS if IPFS upload worked
     // =========================
     return res.status(200).json({
       success: true,
-      recordId: record._id,
+      recordId: record?._id || "unknown",
       ipfsHash,
+      message: "File uploaded to IPFS successfully" + (record ? " and saved to database" : " (database unavailable)"),
     });
   } catch (err) {
     console.error("UPLOAD ERROR:", err);

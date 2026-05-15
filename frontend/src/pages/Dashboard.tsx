@@ -314,7 +314,45 @@ export default function Dashboard({ setActivePage }: Props) {
                   <td style={{ padding: "10px 12px", color: "#475569" }}>{r.type}</td>
                   <td style={{ padding: "10px 12px", color: "#64748b", whiteSpace: "nowrap" }}>{r.uploadedAt}</td>
                   <td style={{ padding: "10px 12px" }}><Badge status={r.status} /></td>
-                  <td style={{ padding: "10px 12px" }}><Btn variant="ghost" style={{ fontSize: 12, padding: "4px 10px" }}>👁 View</Btn></td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <Btn
+                      variant="ghost"
+                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      onClick={async () => {
+                        try {
+                          if (!wallet) {
+                            alert('Connect your wallet to request access');
+                            return;
+                          }
+                          const recNum = Number(r.id.replace(/^REC-/, ''));
+                          const contract = await getContract();
+                          let has = false;
+                          try {
+                            has = await contract.checkAccess(BigInt(recNum), wallet);
+                          } catch { has = false; }
+                          if (has) {
+                            // open IPFS viewer in new tab
+                            window.open(`https://ipfs.io/ipfs/${r.cid}`, '_blank');
+                            return;
+                          }
+                          // send request to backend
+                          const res = await fetch((import.meta as any).env?.VITE_API_URL + '/api/audit/request', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ recordId: r.id, requester: wallet }),
+                          });
+                          if (!res.ok) {
+                            const t = await res.text();
+                            alert('Request failed: ' + t);
+                            return;
+                          }
+                          alert('Access request sent to record owner');
+                        } catch (e: any) {
+                          alert('Request failed: ' + (e?.message || e));
+                        }
+                      }}
+                    >👁 View</Btn>
+                  </td>
                 </tr>
               ))}
               {!loading && filtered.length === 0 && (

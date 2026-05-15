@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from "react";
 import { getReadContract, queryFilterChunks } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
-const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
 const PURPLE_SOFT = "#f3e8ff";
 
 type TxType = "upload" | "grant" | "revoke" | "verify";
@@ -16,6 +15,9 @@ interface LogEntry {
   status: "success" | "pending" | "failed";
   txHash: string;
   blockNumber: number;
+  // optional fields for DB entries
+  rawAction?: string;
+  recordOwner?: string;
 }
 
 const TYPE_LABEL: Record<TxType, string> = {
@@ -26,16 +28,24 @@ const TYPE_LABEL: Record<TxType, string> = {
 };
 
 const Card = ({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) => (
-  <div style={{ background: "#f8f8f8", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 8px rgba(55, 16, 63, 0.07)", border: "1px solid #593080", ...style }}>
+  <div style={{ background: "#f8f8f8", borderRadius: 16, padding: "20px 24px", boxShadow: "0 1px 8px rgba(55,16,63,0.07)", border: "1px solid #593080", ...style }}>
     {children}
   </div>
 );
 
+const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a);
+const shortHash = (h: string) => (h && h.length > 14 ? `${h.slice(0, 10)}...${h.slice(-4)}` : h);
+const fmtTime = (ts: number) => {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 const StatusBadge = ({ s }: { s: LogEntry["status"] }) => {
-  const map = {
+  const map: any = {
     success: { bg: "rgba(16,185,129,0.15)", color: "#10b981", label: "Success" },
     pending: { bg: "rgba(245,158,11,0.15)", color: "#f59e0b", label: "Pending" },
-    failed:  { bg: "rgba(239,68,68,0.15)",  color: "#ef4444", label: "Failed" },
+    failed: { bg: "rgba(239,68,68,0.15)", color: "#ef4444", label: "Failed" },
   }[s];
   return <span style={{ background: map.bg, color: map.color, borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 600 }}>{map.label}</span>;
 };
@@ -49,14 +59,6 @@ const TypeChip = ({ t }: { t: TxType }) => {
   );
 };
 
-const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a);
-const shortHash = (h: string) => (h && h.length > 14 ? `${h.slice(0, 10)}...${h.slice(-4)}` : h);
-const fmtTime = (ts: number) => {
-  const d = new Date(ts * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
 export default function AuditLogs() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | TxType>("all");
@@ -64,6 +66,7 @@ export default function AuditLogs() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [latestBlock, setLatestBlock] = useState<string>("—");
+  const [connectedWallet, setConnectedWallet] = useState<string>("");
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -98,6 +101,7 @@ export default function AuditLogs() {
           blockNumber: e.blockNumber,
         });
       }
+
       for (const e of grantedEv as any[]) {
         const a = e.args ?? {};
         all.push({
@@ -111,6 +115,7 @@ export default function AuditLogs() {
           blockNumber: e.blockNumber,
         });
       }
+
       for (const e of revokedEv as any[]) {
         const a = e.args ?? {};
         all.push({
@@ -125,7 +130,45 @@ export default function AuditLogs() {
         });
       }
 
-      all.sort((a, b) => b.blockNumber - a.blockNumber);
+      // merge backend audit logs
+      try {
+        const res = await fetch((import.meta as any).env?.VITE_API_URL + "/api/audit");
+        if (res.ok) {
+          const body = await res.json();
+          if (body.success && Array.isArray(body.logs)) {
+            for (const db of body.logs) {
+              const t = (db.action || "").toLowerCase();
+              const type: TxType = t.includes("grant") ? "grant" : t.includes("revoke") ? "revoke" : t.includes("upload") ? "upload" : "verify";
+              const entry: LogEntry & any = {
+                id: `db-${db._id}`,
+                type,
+                wallet: shortAddr(db.performedBy || ''),
+                recordId: db.recordId ? `REC-${db.recordId}` : (db.ipfsHash || ''),
+                timestamp: fmtTime(Math.floor(new Date(db.createdAt).getTime() / 1000)),
+                status: 'success',
+                txHash: db.txHash || '',
+                blockNumber: db.blockNumber || 0,
+                rawAction: db.action,
+              };
+
+              // if this is a view request, try to fetch on-chain owner for response eligibility
+              try {
+                if ((db.action || '').toLowerCase().includes('view') && db.recordId) {
+                  const rid = Number(db.recordId);
+                  const rec: any = await contract.records(rid).catch(() => null);
+                  if (rec) entry.recordOwner = (rec.owner ?? rec[1] ?? '') as string;
+                }
+              } catch { /* ignore */ }
+
+              all.push(entry);
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      all.sort((a, b) => (b.blockNumber || 0) - (a.blockNumber || 0));
       setLogs(all.slice(0, 50));
     } catch (err: any) {
       setError(err?.message ?? "Failed to load blockchain logs");
@@ -136,21 +179,41 @@ export default function AuditLogs() {
 
   useEffect(() => {
     loadLogs();
+    (async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).ethereum) {
+          const accs: string[] = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+          if (accs?.[0]) setConnectedWallet(accs[0]);
+        }
+      } catch { }
+    })();
   }, [loadLogs]);
 
+  const respondToRequest = async (entry: any, decision: 'accept' | 'reject') => {
+    try {
+      if (!connectedWallet) { alert('Connect wallet to respond'); return; }
+      const requester = entry.wallet || '';
+      const recordId = entry.recordId;
+      const res = await fetch((import.meta as any).env?.VITE_API_URL + '/api/audit/respond', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId, requester: entry.walletRaw || requester, responder: connectedWallet, decision })
+      });
+      if (!res.ok) { alert('Respond failed'); return; }
+      alert('Responded: ' + decision);
+      loadLogs();
+    } catch (e: any) { alert(e?.message || e); }
+  };
+
   const stats = [
-    { label: "Total Transactions",  value: String(logs.length), icon: "⛓️" },
-    { label: "Records Uploaded",    value: String(logs.filter(l => l.type === "upload").length), icon: "⬆" },
-    { label: "Access Grants",       value: String(logs.filter(l => l.type === "grant").length), icon: "🔑" },
-    { label: "Revoked Permissions", value: String(logs.filter(l => l.type === "revoke").length), icon: "🚫" },
+    { label: "Total Transactions", value: String(logs.length), icon: "⛓️" },
+    { label: "Records Uploaded", value: String(logs.filter(l => l.type === 'upload').length), icon: "⬆" },
+    { label: "Access Grants", value: String(logs.filter(l => l.type === 'grant').length), icon: "🔑" },
+    { label: "Revocations", value: String(logs.filter(l => l.type === 'revoke').length), icon: "🚫" },
   ];
 
   const filtered = logs.filter((l) => {
-    const matchSearch = !search ||
-      l.wallet.toLowerCase().includes(search.toLowerCase()) ||
-      l.recordId.toLowerCase().includes(search.toLowerCase()) ||
-      l.txHash.toLowerCase().includes(search.toLowerCase());
-    const matchFilter = filter === "all" || l.type === filter;
+    const matchSearch = !search || l.wallet.toLowerCase().includes(search.toLowerCase()) || l.recordId.toLowerCase().includes(search.toLowerCase()) || l.txHash.toLowerCase().includes(search.toLowerCase());
+    const matchFilter = filter === 'all' || l.type === filter;
     return matchSearch && matchFilter;
   });
 
@@ -163,7 +226,6 @@ export default function AuditLogs() {
         </p>
       </div>
 
-      {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 16, marginBottom: 24 }}>
         {stats.map((s) => (
           <Card key={s.label} style={{ padding: "16px 20px" }}>
@@ -180,32 +242,6 @@ export default function AuditLogs() {
         ))}
       </div>
 
-      {/* Blockchain status */}
-      <Card style={{ marginBottom: 24, background: PURPLE_DARK, color: "#fff" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "#ddd6fe", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Network</div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>Polygon Amoy</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: "#ddd6fe", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Latest Block</div>
-            <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "monospace" }}>{latestBlock}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: "#ddd6fe", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Events Loaded</div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{logs.length}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: "#ddd6fe", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Smart Contract</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#10b981", boxShadow: "0 0 8px #10b981" }} />
-              <span style={{ fontWeight: 700, fontSize: 14 }}>Active</span>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Filters + Table */}
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ fontSize: 20, fontWeight: 750, margin: 0, color: "#3f234d" }}>Activity Log</h2>
@@ -227,29 +263,21 @@ export default function AuditLogs() {
               <option value="revoke">Revocations</option>
               <option value="verify">Verification</option>
             </select>
-            <button
-              onClick={loadLogs}
-              disabled={loading}
-              style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${PURPLE}`, background: PURPLE, color: "#fff", fontSize: 13, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1 }}
-            >
+            <button onClick={loadLogs} disabled={loading} style={{ padding: "8px 14px", borderRadius: 8, border: `1px solid ${PURPLE}`, background: PURPLE, color: "#fff", fontSize: 13, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1 }}>
               {loading ? "Refreshing…" : "Refresh"}
             </button>
           </div>
         </div>
 
-        {error && (
-          <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "#fef2f2", color: "#991b1b", fontSize: 13 }}>
-            {error}
-          </div>
-        )}
+        {error && <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: "#fef2f2", color: "#991b1b", fontSize: 13 }}>{error}</div>}
 
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["Transaction Type", "Wallet Address", "Record ID", "Tx Hash", "Timestamp", "Status"].map((h) => (
+                { ["Transaction Type", "Wallet Address", "Record ID", "Tx Hash", "Timestamp", "Status"].map((h) => (
                   <th key={h} style={{ padding: "10px 12px", textAlign: "left", color: "#64748b", fontWeight: 600, fontSize: 12, borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
+                )) }
               </tr>
             </thead>
             <tbody>
@@ -259,18 +287,28 @@ export default function AuditLogs() {
                   <td style={{ padding: "10px 12px", fontFamily: "monospace", color: PURPLE, fontWeight: 600 }}>{l.wallet}</td>
                   <td style={{ padding: "10px 12px", fontFamily: "monospace", fontWeight: 500 }}>{l.recordId}</td>
                   <td style={{ padding: "10px 12px" }}>
-                    <span style={{ fontFamily: "monospace", fontSize: 11, background: PURPLE_SOFT, color: PURPLE_DARK, padding: "3px 8px", borderRadius: 6, fontWeight: 600 }}>
-                      {shortHash(l.txHash)}
-                    </span>
+                    <span style={{ fontFamily: "monospace", fontSize: 11, background: PURPLE_SOFT, color: PURPLE, padding: "3px 8px", borderRadius: 6, fontWeight: 600 }}>{shortHash(l.txHash)}</span>
                   </td>
                   <td style={{ padding: "10px 12px", color: "#64748b", whiteSpace: "nowrap" }}>{l.timestamp}</td>
-                  <td style={{ padding: "10px 12px" }}><StatusBadge s={l.status} /></td>
+                  <td style={{ padding: "10px 12px", display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <StatusBadge s={l.status} />
+                    { (l.rawAction || '').toLowerCase() === 'viewrequested' && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        { l.recordOwner && connectedWallet && (l.recordOwner.toLowerCase() === connectedWallet.toLowerCase()) ? (
+                          <>
+                            <button onClick={() => respondToRequest(l, 'accept')} style={{ padding: '6px 10px', borderRadius: 8, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer' }}>Accept</button>
+                            <button onClick={() => respondToRequest(l, 'reject')} style={{ padding: '6px 10px', borderRadius: 8, background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', cursor: 'pointer' }}>Reject</button>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 12, color: '#94a3b8' }}>Pending owner response</span>
+                        )}
+                      </div>
+                    ) }
+                  </td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>
-                  {loading ? "Loading blockchain events…" : "No transactions found on-chain."}
-                </td></tr>
+                <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>{loading ? "Loading blockchain events…" : "No transactions found on-chain."}</td></tr>
               )}
             </tbody>
           </table>
