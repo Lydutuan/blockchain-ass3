@@ -241,6 +241,9 @@ export default function AuditLogs() {
           </Card>
         ))}
       </div>
+      <div style={{ marginBottom: 18, color: "#475569", fontSize: 13 }}>
+        Current blockchain sync block: {latestBlock}
+      </div>
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>

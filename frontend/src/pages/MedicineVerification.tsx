@@ -5,7 +5,7 @@ const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
 const PURPLE_SOFT = "#f3e8ff";
 
-type AuthStatus = "authentic" | "suspicious" | "expired" | null;
+type AuthStatus = "authentic" | "suspicious" | "expired" | "unknown" | null;
 
 interface VerificationResult {
   medicineId: string;
@@ -34,13 +34,15 @@ const Card = ({ children, style = {} }: { children: React.ReactNode; style?: Rea
 );
 
 const AuthBadge = ({ s }: { s: AuthStatus }) => {
-  if (!s) return null;
+  if (!s || s === "unknown") return null;
   const map = {
     authentic:  { bg: "rgba(8, 182, 124, 0.15)", color: "#1edb9c", label: "Authentic" },
     suspicious: { bg: "rgba(245,158,11,0.15)", color: "#f59e0b", label: "Suspicious" },
     expired:    { bg: "rgba(239,68,68,0.15)",  color: "#ef4444", label: "Expired" },
-  }[s];
-  return <span style={{ background: map.bg, color: map.color, borderRadius: 20, padding: "4px 14px", fontSize: 13, fontWeight: 700 }}>{map.label}</span>;
+  } as const;
+  const value = map[s as Exclude<AuthStatus, "unknown" | null>];
+  if (!value) return null;
+  return <span style={{ background: value.bg, color: value.color, borderRadius: 20, padding: "4px 14px", fontSize: 13, fontWeight: 700 }}>{value.label}</span>;
 };
 
 const Btn = ({ children, onClick, variant = "primary", style = {}, disabled }: any) => {
@@ -80,6 +82,7 @@ export default function MedicineVerification() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string>("");
+  const [connectedWallet, setConnectedWallet] = useState<string>("");
 
   const handleVerify = async () => {
     if (!batchId.trim()) return;
@@ -91,10 +94,88 @@ export default function MedicineVerification() {
     setTxHash("");
 
     try {
-      // The deployed MedicalRecords contract verifies on-chain medical records by ID.
-      // Strip non-digits so users can paste "REC-12" or "MED-VN-12".
+      let wallet = connectedWallet;
+      if (!wallet && typeof window !== "undefined" && (window as any).ethereum) {
+        const accounts: string[] = await (window as any).ethereum.request({ method: "eth_requestAccounts" });
+        wallet = accounts?.[0] || "";
+        setConnectedWallet(wallet);
+      }
+
+      const apiUrl = `${(import.meta as any).env.VITE_API_URL || ""}/api/medicine/verify?batchId=${encodeURIComponent(batchId)}&wallet=${encodeURIComponent(wallet || "unknown")}`;
+      const dbResponse = await fetch(apiUrl);
+      const dbBody = await dbResponse.json();
+
+      if (dbResponse.ok && dbBody.success && dbBody.record) {
+        const record = dbBody.record;
+        const normalizedStatus = (record.status || "unknown") as AuthStatus;
+
+        setNotice(`✓ Loaded medicine data for batch ${record.batchId} from database`);
+        setResult({
+          medicineId: record.recordId ? `REC-${record.recordId}` : record.batchId,
+          drugName: record.medicineName || record.batchId,
+          manufacturer: record.manufacturer || "MediLedger Network",
+          manufacturerAddr: record.manufacturerAddr || "",
+          batchId: record.batchId,
+          manufacturedDate: record.createdAt ? new Date(record.createdAt).toISOString().slice(0, 10) : "—",
+          expiryDate: record.expiryDate || "—",
+          status: normalizedStatus,
+          ipfsCid: record.ipfsCid || "",
+          hash: record.medicineHash || record.ipfsCid || "",
+        });
+
+        const steps: TimelineStep[] = [];
+        if (record.recordId) {
+          try {
+            const readContract = await getReadContract();
+            const id = BigInt(record.recordId);
+            const provider = readContract.runner?.provider;
+            if (provider) {
+              const current = await provider.getBlockNumber();
+              const fromBlock = Math.max(0, current - 5000);
+              const [created, granted, revoked] = await Promise.all([
+                queryFilterChunks(readContract, readContract.filters.RecordCreated(id), fromBlock, current).catch(() => []),
+                queryFilterChunks(readContract, readContract.filters.AccessGranted(id), fromBlock, current).catch(() => []),
+                queryFilterChunks(readContract, readContract.filters.AccessRevoked(id), fromBlock, current).catch(() => []),
+              ]);
+              for (const e of created as any[]) {
+                steps.push({
+                  step: "Record Created",
+                  date: fmtTime(Number(e.args?.timestamp ?? 0n)),
+                  actor: shortAddr(e.args?.owner ?? ""),
+                  hash: shortHash(e.transactionHash),
+                });
+              }
+              for (const e of granted as any[]) {
+                steps.push({
+                  step: "Access Granted",
+                  date: fmtTime(Number(e.args?.timestamp ?? 0n)),
+                  actor: shortAddr(e.args?.grantedTo ?? ""),
+                  hash: shortHash(e.transactionHash),
+                });
+              }
+              for (const e of revoked as any[]) {
+                steps.push({
+                  step: "Access Revoked",
+                  date: fmtTime(Number(e.args?.timestamp ?? 0n)),
+                  actor: shortAddr(e.args?.revokedFrom ?? ""),
+                  hash: shortHash(e.transactionHash),
+                });
+              }
+              steps.sort((a, b) => a.date.localeCompare(b.date));
+            }
+          } catch { /* ignore timeline failure */ }
+        }
+        setTimeline(steps);
+        return;
+      }
+
+      if (!dbResponse.ok) {
+        throw new Error(dbBody.error || "No database record found for that batch ID");
+      }
+
+      // Fallback: attempt on-chain verification if no DB record exists
       const numericId = batchId.replace(/\D/g, "");
-      if (!numericId) throw new Error("Enter a numeric record ID (e.g. 1, 2, 3)");
+      if (!numericId) throw new Error("Enter a valid batch id or existing record id");
       const id = BigInt(numericId);
 
       const readContract = await getReadContract();
@@ -109,10 +190,9 @@ export default function MedicineVerification() {
         throw new Error(`Record #${numericId} does not exist on-chain.`);
       }
 
+      setNotice(`✓ No DB entry found. Showing on-chain data for Record #${numericId}`);
       const status: AuthStatus = "authentic";
-      setNotice(`✓ Record #${recordId.toString()} verified on-chain`);
 
-      // Build traceability timeline from RecordCreated + AccessGranted/Revoked events
       const steps: TimelineStep[] = [];
       try {
         const provider = readContract.runner?.provider;
@@ -166,7 +246,7 @@ export default function MedicineVerification() {
         hash: ipfsCid,
       });
     } catch (e: any) {
-      setError(e?.shortMessage ?? e?.message ?? "Record not found on-chain");
+      setError(e?.shortMessage ?? e?.message ?? "Record not found");
     } finally {
       setVerifying(false);
     }

@@ -22,11 +22,13 @@ const uploadRoutes = require("./routes/uploadRoutes");
 const auditRoutes = require("./routes/auditRoutes");
 const accessRoutes = require("./routes/accessRoutes");
 const decryptRoutes = require("./routes/decryptRoutes");
+const medicineRoutes = require("./routes/medicineRoutes");
 
 app.use("/api/test", testRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/access", accessRoutes);
 app.use("/api/decrypt", decryptRoutes);
+app.use("/api/medicine", medicineRoutes);
 
 // IMPORTANT FIX: mount upload correctly
 app.use("/api", uploadRoutes);

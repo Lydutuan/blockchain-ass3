@@ -67,8 +67,10 @@ export default function UploadRecord() {
     let uploaderAddress = null;
     try {
       const contract = await getContract();
-      const signer = await contract.runner.provider.getSigner();
-      uploaderAddress = await signer.getAddress();
+      const signer: any = (contract as any).signer || null;
+      if (signer && typeof signer.getAddress === "function") {
+        uploaderAddress = await signer.getAddress();
+      }
     } catch (err) {
       console.warn("Could not get wallet address:", err);
     }
