@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { getReadContract, queryFilterChunks } from "../blockchain/contract";
+import { getReadContract, getTotalRecords, queryFilterChunks } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_SOFT = "#f3e8ff";
@@ -78,7 +78,7 @@ export default function AuditLogs() {
 
       const current = await provider.getBlockNumber();
       setLatestBlock(`#${current.toLocaleString()}`);
-      const fromBlock = Math.max(0, current - 5000);
+      const fromBlock = Math.max(0, current - 200000);
 
       const [createdEv, grantedEv, revokedEv] = await Promise.all([
         queryFilterChunks(contract, contract.filters.RecordCreated(), fromBlock, current).catch(() => []),
@@ -130,9 +130,56 @@ export default function AuditLogs() {
         });
       }
 
+      if (all.length === 0) {
+        const totalRecords = await getTotalRecords(contract);
+        for (let i = 1; i <= totalRecords; i++) {
+          try {
+            const rec: any = await contract.records(i).catch(() => null);
+            if (!rec) continue;
+            const exists: boolean = rec.exists ?? rec[4];
+            if (!exists) continue;
+            const owner: string = rec.owner ?? rec[1];
+            const createdAt: bigint = rec.createdAt ?? rec[3];
+            all.push({
+              id: `fallback-upload-${i}`,
+              type: "upload",
+              wallet: shortAddr(owner),
+              recordId: `REC-${i}`,
+              timestamp: fmtTime(Number(createdAt ?? 0n)),
+              status: "success",
+              txHash: "",
+              blockNumber: 0,
+            });
+
+            const accessCount = Number(await contract.getAccessCount(i).catch(() => 0));
+            for (let g = 0; g < accessCount; g++) {
+              const grant: any = await contract.accessGrants(i, g).catch(() => null);
+              if (!grant) continue;
+              const grantedTo: string = grant.grantedTo ?? grant[0];
+              const grantedAt = grant.grantedAt ?? grant[1];
+              const isRevoked: boolean = grant.isRevoked ?? grant[3];
+              if (grantedTo.toLowerCase() === owner.toLowerCase()) continue;
+              all.push({
+                id: `fallback-grant-${i}-${g}`,
+                type: isRevoked ? "revoke" : "grant",
+                wallet: shortAddr(grantedTo),
+                recordId: `REC-${i}`,
+                timestamp: fmtTime(Number(grantedAt ?? 0n)),
+                status: "success",
+                txHash: "",
+                blockNumber: 0,
+              });
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+
       // merge backend audit logs
       try {
-        const res = await fetch((import.meta as any).env?.VITE_API_URL + "/api/audit");
+        const baseUrl = (import.meta as any).env?.VITE_API_URL || "";
+        const res = await fetch(`${baseUrl}/api/audit`);
         if (res.ok) {
           const body = await res.json();
           if (body.success && Array.isArray(body.logs)) {

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { getReadContract, queryFilterChunks } from "../blockchain/contract";
 
 const PURPLE = "#6d28d9";
 const PURPLE_DARK = "linear-gradient(135deg, rgb(84, 39, 124))";
@@ -13,12 +12,160 @@ interface VerificationResult {
   manufacturer: string;
   manufacturerAddr: string;
   batchId: string;
+  amount: string;
   manufacturedDate: string;
   expiryDate: string;
   status: AuthStatus;
   ipfsCid: string;
   hash: string;
 }
+
+interface MedicineInventoryItem {
+  batchId: string;
+  medicineId: string;
+  medicineName: string;
+  manufacturer: string;
+  manufacturerAddr: string;
+  amount: string;
+  status: AuthStatus;
+  manufacturedDate: string;
+  expiryDate: string;
+  ipfsCid: string;
+  medicineHash: string;
+}
+
+const MEDICINE_INVENTORY: MedicineInventoryItem[] = [
+  {
+    batchId: "MED-1001",
+    medicineId: "MED-1001",
+    medicineName: "Aspirin 500mg",
+    manufacturer: "MediPharma Ltd.",
+    manufacturerAddr: "0x1111111111111111111111111111111111111111",
+    amount: "500 tablets",
+    status: "authentic",
+    manufacturedDate: "2024-04-10",
+    expiryDate: "2026-12-31",
+    ipfsCid: "QmYx12345Aspirin",
+    medicineHash: "0x6f1a8aa5a9c3ea2c8208dc5a70b761b07a137a4d37f7e9a3e0b1a9e73fbb01f7",
+  },
+  {
+    batchId: "MED-1002",
+    medicineId: "MED-1002",
+    medicineName: "Paracetamol 650mg",
+    manufacturer: "HealthCore Inc.",
+    manufacturerAddr: "0x2222222222222222222222222222222222222222",
+    amount: "400 tablets",
+    status: "authentic",
+    manufacturedDate: "2024-05-18",
+    expiryDate: "2027-05-15",
+    ipfsCid: "QmYx12345Para",
+    medicineHash: "0xa3f2b2ac4c6e5d0e9f8b3a2d1c4e5f6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
+  },
+  {
+    batchId: "MED-1003",
+    medicineId: "MED-1003",
+    medicineName: "Amoxicillin 250mg",
+    manufacturer: "BioMedix Labs",
+    manufacturerAddr: "0x3333333333333333333333333333333333333333",
+    amount: "200 capsules",
+    status: "authentic",
+    manufacturedDate: "2024-03-22",
+    expiryDate: "2026-08-10",
+    ipfsCid: "QmYx12345Amox",
+    medicineHash: "0x8e3f2b4d6c7a5f9e4b3a2c1d0e9f8b7a6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f",
+  },
+  {
+    batchId: "MED-1004",
+    medicineId: "MED-1004",
+    medicineName: "Ibuprofen 400mg",
+    manufacturer: "Wellness Labs",
+    manufacturerAddr: "0x4444444444444444444444444444444444444444",
+    amount: "300 tablets",
+    status: "authentic",
+    manufacturedDate: "2024-01-12",
+    expiryDate: "2027-03-22",
+    ipfsCid: "QmYx12345Ibu",
+    medicineHash: "0x5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4",
+  },
+  {
+    batchId: "MED-1005",
+    medicineId: "MED-1005",
+    medicineName: "Metformin 500mg",
+    manufacturer: "PharmaPlus Co.",
+    manufacturerAddr: "0x5555555555555555555555555555555555555555",
+    amount: "250 tablets",
+    status: "authentic",
+    manufacturedDate: "2024-02-03",
+    expiryDate: "2026-10-05",
+    ipfsCid: "QmYx12345Met",
+    medicineHash: "0x9a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8b7",
+  },
+  {
+    batchId: "MED-1006",
+    medicineId: "MED-1006",
+    medicineName: "Omeprazole 20mg",
+    manufacturer: "Digestix Pharma",
+    manufacturerAddr: "0x6666666666666666666666666666666666666666",
+    amount: "180 capsules",
+    status: "authentic",
+    manufacturedDate: "2024-06-10",
+    expiryDate: "2027-01-18",
+    ipfsCid: "QmYx12345Ome",
+    medicineHash: "0xb5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c",
+  },
+  {
+    batchId: "MED-1007",
+    medicineId: "MED-1007",
+    medicineName: "Lisinopril 10mg",
+    manufacturer: "CardioGenix",
+    manufacturerAddr: "0x7777777777777777777777777777777777777777",
+    amount: "150 tablets",
+    status: "authentic",
+    manufacturedDate: "2024-03-30",
+    expiryDate: "2027-07-30",
+    ipfsCid: "QmYx12345Lis",
+    medicineHash: "0xc6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
+  },
+  {
+    batchId: "MED-1008",
+    medicineId: "MED-1008",
+    medicineName: "Atorvastatin 20mg",
+    manufacturer: "CardioPharm Solutions",
+    manufacturerAddr: "0x8888888888888888888888888888888888888888",
+    amount: "220 tablets",
+    status: "authentic",
+    manufacturedDate: "2024-05-05",
+    expiryDate: "2026-11-12",
+    ipfsCid: "QmYx12345Ato",
+    medicineHash: "0xd7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e",
+  },
+  {
+    batchId: "MED-1009",
+    medicineId: "MED-1009",
+    medicineName: "Citalopram 20mg",
+    manufacturer: "NeuroHealth Labs",
+    manufacturerAddr: "0x9999999999999999999999999999999999999999",
+    amount: "120 tablets",
+    status: "suspicious",
+    manufacturedDate: "2024-01-25",
+    expiryDate: "2027-02-14",
+    ipfsCid: "QmYx12345Cit",
+    medicineHash: "0xe8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f",
+  },
+  {
+    batchId: "MED-1010",
+    medicineId: "MED-1010",
+    medicineName: "Simvastatin 40mg",
+    manufacturer: "LipidCare Pharmaceuticals",
+    manufacturerAddr: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    amount: "100 tablets",
+    status: "expired",
+    manufacturedDate: "2023-11-15",
+    expiryDate: "2026-09-01",
+    ipfsCid: "QmYx12345Sim",
+    medicineHash: "0xf9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a",
+  },
+];
 
 interface TimelineStep {
   step: string;
@@ -62,17 +209,6 @@ const Btn = ({ children, onClick, variant = "primary", style = {}, disabled }: a
 };
 
 const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a);
-const shortHash = (h: string) => (h && h.length > 14 ? `${h.slice(0, 10)}...${h.slice(-6)}` : h);
-const fmtDate = (ts: bigint | number) => {
-  const n = Number(ts);
-  if (!n) return "—";
-  return new Date(n * 1000).toISOString().slice(0, 10);
-};
-const fmtTime = (ts: number) => {
-  const d = new Date(ts * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
 
 export default function MedicineVerification() {
   const [batchId, setBatchId] = useState("");
@@ -82,7 +218,6 @@ export default function MedicineVerification() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string>("");
-  const [connectedWallet, setConnectedWallet] = useState<string>("");
 
   const handleVerify = async () => {
     if (!batchId.trim()) return;
@@ -94,159 +229,29 @@ export default function MedicineVerification() {
     setTxHash("");
 
     try {
-      let wallet = connectedWallet;
-      if (!wallet && typeof window !== "undefined" && (window as any).ethereum) {
-        const accounts: string[] = await (window as any).ethereum.request({ method: "eth_requestAccounts" });
-        wallet = accounts?.[0] || "";
-        setConnectedWallet(wallet);
+      const normalizedBatch = batchId.trim().toUpperCase();
+      const item = MEDICINE_INVENTORY.find((entry) => entry.batchId.toUpperCase() === normalizedBatch);
+
+      if (!item) {
+        throw new Error(`Batch ID ${batchId.trim()} not found in local inventory.`);
       }
 
-      const apiUrl = `${(import.meta as any).env.VITE_API_URL || ""}/api/medicine/verify?batchId=${encodeURIComponent(batchId)}&wallet=${encodeURIComponent(wallet || "unknown")}`;
-      const dbResponse = await fetch(apiUrl);
-      const dbBody = await dbResponse.json();
-
-      if (dbResponse.ok && dbBody.success && dbBody.record) {
-        const record = dbBody.record;
-        const normalizedStatus = (record.status || "unknown") as AuthStatus;
-
-        setNotice(`✓ Loaded medicine data for batch ${record.batchId} from database`);
-        setResult({
-          medicineId: record.recordId ? `REC-${record.recordId}` : record.batchId,
-          drugName: record.medicineName || record.batchId,
-          manufacturer: record.manufacturer || "MediLedger Network",
-          manufacturerAddr: record.manufacturerAddr || "",
-          batchId: record.batchId,
-          manufacturedDate: record.createdAt ? new Date(record.createdAt).toISOString().slice(0, 10) : "—",
-          expiryDate: record.expiryDate || "—",
-          status: normalizedStatus,
-          ipfsCid: record.ipfsCid || "",
-          hash: record.medicineHash || record.ipfsCid || "",
-        });
-
-        const steps: TimelineStep[] = [];
-        if (record.recordId) {
-          try {
-            const readContract = await getReadContract();
-            const id = BigInt(record.recordId);
-            const provider = readContract.runner?.provider;
-            if (provider) {
-              const current = await provider.getBlockNumber();
-              const fromBlock = Math.max(0, current - 5000);
-              const [created, granted, revoked] = await Promise.all([
-                queryFilterChunks(readContract, readContract.filters.RecordCreated(id), fromBlock, current).catch(() => []),
-                queryFilterChunks(readContract, readContract.filters.AccessGranted(id), fromBlock, current).catch(() => []),
-                queryFilterChunks(readContract, readContract.filters.AccessRevoked(id), fromBlock, current).catch(() => []),
-              ]);
-              for (const e of created as any[]) {
-                steps.push({
-                  step: "Record Created",
-                  date: fmtTime(Number(e.args?.timestamp ?? 0n)),
-                  actor: shortAddr(e.args?.owner ?? ""),
-                  hash: shortHash(e.transactionHash),
-                });
-              }
-              for (const e of granted as any[]) {
-                steps.push({
-                  step: "Access Granted",
-                  date: fmtTime(Number(e.args?.timestamp ?? 0n)),
-                  actor: shortAddr(e.args?.grantedTo ?? ""),
-                  hash: shortHash(e.transactionHash),
-                });
-              }
-              for (const e of revoked as any[]) {
-                steps.push({
-                  step: "Access Revoked",
-                  date: fmtTime(Number(e.args?.timestamp ?? 0n)),
-                  actor: shortAddr(e.args?.revokedFrom ?? ""),
-                  hash: shortHash(e.transactionHash),
-                });
-              }
-              steps.sort((a, b) => a.date.localeCompare(b.date));
-            }
-          } catch { /* ignore timeline failure */ }
-        }
-        setTimeline(steps);
-        return;
-      }
-
-      if (!dbResponse.ok) {
-        throw new Error(dbBody.error || "No database record found for that batch ID");
-      }
-
-      // Fallback: attempt on-chain verification if no DB record exists
-      const numericId = batchId.replace(/\D/g, "");
-      if (!numericId) throw new Error("Enter a valid batch id or existing record id");
-      const id = BigInt(numericId);
-
-      const readContract = await getReadContract();
-      const r: any = await readContract.records(id);
-      const recordId: bigint = r.recordId ?? r[0];
-      const owner: string = r.owner ?? r[1];
-      const ipfsCid: string = r.ipfsCid ?? r[2];
-      const createdAt: bigint = r.createdAt ?? r[3];
-      const exists: boolean = r.exists ?? r[4];
-
-      if (!exists || Number(recordId) === 0) {
-        throw new Error(`Record #${numericId} does not exist on-chain.`);
-      }
-
-      setNotice(`✓ No DB entry found. Showing on-chain data for Record #${numericId}`);
-      const status: AuthStatus = "authentic";
-
-      const steps: TimelineStep[] = [];
-      try {
-        const provider = readContract.runner?.provider;
-        if (provider) {
-          const current = await provider.getBlockNumber();
-          const fromBlock = Math.max(0, current - 5000);
-          const [created, granted, revoked] = await Promise.all([
-            queryFilterChunks(readContract, readContract.filters.RecordCreated(id), fromBlock, current).catch(() => []),
-            queryFilterChunks(readContract, readContract.filters.AccessGranted(id), fromBlock, current).catch(() => []),
-            queryFilterChunks(readContract, readContract.filters.AccessRevoked(id), fromBlock, current).catch(() => []),
-          ]);
-          for (const e of created as any[]) {
-            steps.push({
-              step: "Record Created",
-              date: fmtTime(Number(e.args?.timestamp ?? createdAt)),
-              actor: shortAddr(e.args?.owner ?? owner),
-              hash: shortHash(e.transactionHash),
-            });
-          }
-          for (const e of granted as any[]) {
-            steps.push({
-              step: "Access Granted",
-              date: fmtTime(Number(e.args?.timestamp ?? 0n)),
-              actor: shortAddr(e.args?.grantedTo ?? ""),
-              hash: shortHash(e.transactionHash),
-            });
-          }
-          for (const e of revoked as any[]) {
-            steps.push({
-              step: "Access Revoked",
-              date: fmtTime(Number(e.args?.timestamp ?? 0n)),
-              actor: shortAddr(e.args?.revokedFrom ?? ""),
-              hash: shortHash(e.transactionHash),
-            });
-          }
-          steps.sort((a, b) => a.date.localeCompare(b.date));
-        }
-      } catch { /* ignore timeline failure */ }
-
-      setTimeline(steps);
+      setNotice(`✓ Loaded medicine data for batch ${item.batchId} from local inventory`);
       setResult({
-        medicineId: `REC-${recordId.toString()}`,
-        drugName: `Record #${recordId.toString()}`,
-        manufacturer: "MediLedger Network",
-        manufacturerAddr: owner,
-        batchId: ipfsCid.slice(0, 12),
-        manufacturedDate: fmtDate(createdAt),
-        expiryDate: "—",
-        status,
-        ipfsCid,
-        hash: ipfsCid,
+        medicineId: item.medicineId,
+        drugName: item.medicineName,
+        manufacturer: item.manufacturer,
+        manufacturerAddr: item.manufacturerAddr,
+        batchId: item.batchId,
+        amount: item.amount,
+        manufacturedDate: item.manufacturedDate,
+        expiryDate: item.expiryDate,
+        status: item.status,
+        ipfsCid: item.ipfsCid,
+        hash: item.medicineHash,
       });
     } catch (e: any) {
-      setError(e?.shortMessage ?? e?.message ?? "Record not found");
+      setError(e?.shortMessage ?? e?.message ?? "Batch not found");
     } finally {
       setVerifying(false);
     }
@@ -305,6 +310,7 @@ export default function MedicineVerification() {
               ["Manufacturer", result.manufacturer || "—"],
               ["Manufacturer Wallet", shortAddr(result.manufacturerAddr)],
               ["Batch Number", result.batchId || "—"],
+              ["Amount", result.amount || "—"],
               ["Manufactured", result.manufacturedDate],
               ["Expiry Date", result.expiryDate],
             ].map(([k, v]) => (
