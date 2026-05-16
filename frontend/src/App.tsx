@@ -2,6 +2,7 @@ import { useState } from "react";
 import Dashboard from "./pages/Dashboard";
 import AccessControl from "./pages/AccessControl";
 import AuditLogs from "./pages/AuditLogs";
+import ConsentRequests from "./pages/ConsentRequests";
 import MedicineVerification from "./pages/MedicineVerification";
 import UploadRecord from "./pages/UploadRecord";
 import "./App.css";
@@ -13,12 +14,14 @@ export type PageKey =
   | "upload"
   | "access"
   | "audit"
+  | "consent"
   | "medicine";
 
 const NAV = [
   { id: "dashboard" as PageKey, label: "Dashboard" },
   { id: "upload" as PageKey, label: "Upload Record" },
   { id: "access" as PageKey, label: "Access Control" },
+  { id: "consent" as PageKey, label: "Consent Requests" },
   { id: "audit" as PageKey, label: "Audit Logs" },
   { id: "medicine" as PageKey, label: "Medicine Verify" },
 ];
@@ -54,6 +57,9 @@ export default function App() {
 
       case "access":
         return <AccessControl />;
+
+      case "consent":
+        return <ConsentRequests />;
 
       case "audit":
         return <AuditLogs />;

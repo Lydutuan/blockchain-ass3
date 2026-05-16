@@ -269,7 +269,6 @@ export default function Dashboard({ setActivePage }: Props) {
               <span style={{ color: wallet ? "#10b981" : "#ef4444", fontWeight: 700, fontSize: 14 }}>{wallet ? "CONNECTED" : "DISCONNECTED"}</span>
             </div>
             <div style={{ color: "#6366f1", fontSize: 12, marginTop: 4 }}>0 MATIC balance</div>
-            <Btn variant="ghost" style={{ marginTop: 8, color: "#a5b4fc", borderColor: "rgba(165,180,252,0.3)", fontSize: 12 }}>Disconnect</Btn>
           </div>
         </div>
       </Card>
