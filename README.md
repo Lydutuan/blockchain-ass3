@@ -1,283 +1,197 @@
-# Blockchain Medical Records System - Smart Contracts
+# Blockchain Medical Records System
 
-A decentralized medical records management system built on Solidity (Polygon/Ethereum). This system enables secure storage, access control, and verification of medical records using blockchain technology and IPFS.
+A hybrid decentralized medical records platform combining on-chain record access control with off-chain encrypted IPFS storage and backend services.
 
-## 📋 Features
+## 📋 What this project actually does
 
-### Core Features
-- ✅ **Patient Record Management**: Create, update, and manage patient medical records
-- ✅ **Access Control with Expiry**: Grant/revoke access to records with time-based expiry
-- ✅ **Audit Logs**: Complete audit trail of all record access and modifications
-- ✅ **IPFS Integration**: Store encrypted medical data on IPFS with CID references
-- ✅ **Medicine Verification**: QR-based medicine authenticity verification with hash matching
-- ✅ **Role-Based Access**: Doctor, Patient, and Admin roles
-- ✅ **Reentrancy Protection**: Secure against reentrancy attacks
-- ✅ **Pausable Contracts**: Emergency pause functionality for security
-- ✅ **Input Validation**: Comprehensive validation for all inputs
+- ✅ **On-chain record anchoring**: Store only IPFS CIDs in a Solidity smart contract (`MedicalRecords.sol`).
+- ✅ **Owner-controlled access**: Patients own records and can grant/revoke access to other wallets.
+- ✅ **Encrypted off-chain uploads**: Files are encrypted in the backend and pinned to IPFS via Pinata.
+- ✅ **Audit logging**: Backend audit logs capture uploads, access requests, and access grants.
+- ✅ **Medicine verification service**: Medicine lookup and authenticity data are handled in backend MongoDB.
+- ✅ **React frontend with MetaMask**: A Vite/React app that connects to MetaMask and interacts with both contract and backend.
 
 ## 🏗️ Architecture
 
-### Smart Contracts
+### Smart Contract
 
-#### `MedicalRecords.sol`
-Main contract that combines:
-- **AuditLog**: Event and audit trail management
-- **PatientRecord**: Structure for storing patient medical data
-- **AccessGrant**: Access control with expiry timestamps
-- **MedicineRecord**: Medicine verification and tracking
+The core contract is `contracts/MedicalRecords.sol`.
+It manages:
+- `addRecord(string ipfsCid)` — create a new record and store the encrypted IPFS CID.
+- `grantAccess(uint256 recordId, address user, uint256 expiryTime)` — allow a wallet to read the record.
+- `revokeAccess(uint256 recordId, address user)` — revoke previously granted access.
+- `getRecord(uint256 recordId)` — return record data only if caller has access.
+- `checkAccess(uint256 recordId, address user)` — verify if a user currently has access.
+- `getAccessCount(uint256 recordId)` — return the number of grant entries.
 
-### Key Components
+The smart contract does not store raw medical files, user roles, or medicine details; it stores record pointers and access grants.
 
-1. **Patient Record Mapping**
-   ```solidity
-   struct PatientRecord {
-       uint256 recordId;
-       address patient;
-       string ipfsCid;        // Encrypted data on IPFS
-       uint256 createdAt;
-       uint256 updatedAt;
-       bool isActive;
-       uint256 version;       // Track record versions
-   }
-   ```
+### Backend
 
-2. **Access Control**
-   ```solidity
-   struct AccessGrant {
-       address user;
-       uint256 grantedAt;
-       uint256 expiryTime;    // Time-based expiry
-       bool isRevoked;
-       string accessLevel;    // "read", "read-write"
-   }
-   ```
+The backend lives in `backend/` and is built with:
+- Express.js
+- MongoDB / Mongoose
+- Pinata IPFS integration
+- AES-256-GCM encryption for uploaded files
+- `backend/src/routes` for uploads, access management, audit logs, access requests, decryption helpers, and medicine verification.
 
-3. **Medicine Verification**
-   ```solidity
-   struct MedicineRecord {
-       uint256 medicineId;
-       address doctor;
-       uint256 recordId;
-       string medicineName;
-       string qrCode;         // QR code hash
-       bytes32 medicineHash;  // Authenticity proof
-       uint256 prescribedAt;
-       bool isVerified;
-   }
-   ```
+Key backend behavior:
+- Upload file data is encrypted and uploaded to IPFS.
+- The backend returns the IPFS hash (`ipfsHash`) to the frontend.
+- A MongoDB audit log records upload and access events.
+- Medicine verification is implemented off-chain using a `MedicineVerification` collection.
+- Contract interactions such as `grantAccess` may be driven by API endpoints.
 
-## 🔐 Security Features
+### Frontend
 
-### Reentrancy Protection
-- All state-modifying functions use `nonReentrant` modifier from OpenZeppelin
+The frontend lives in `frontend/` and uses:
+- React + TypeScript
+- Vite
+- `ethers.js` v6 for MetaMask and contract interaction
+- A wallet connect flow in `frontend/src/blockchain/wallet.ts`
+- Contract helpers in `frontend/src/blockchain/contract.ts`
+- Pages for dashboard, upload, access control, consent requests, audit logs, and medicine verification.
 
-### Access Control
-- Role-based access with OpenZeppelin `AccessControl`
-- Three roles: ADMIN, DOCTOR, PATIENT
-- Granular permission checks on all functions
+## 📦 Setup
 
-### Input Validation
-- Address validation (no zero addresses)
-- String length validation (non-empty CIDs, names, QR codes)
-- Hash validation (non-zero hashes)
-- Time validation (expiry times must be in future or zero)
+### Install dependencies
 
-### Emergency Functions
-- Pausable contract for emergency situations
-- Only admin can pause/unpause
-
-### Medicine Authenticity
-- QR code tracking
-- Hash-based verification system
-- Prevents counterfeit medicine detection
-
-## 📦 Installation & Setup
-
-### Prerequisites
-- Node.js v16+ 
-- npm or yarn
-- Git
-
-### Installation Steps
-
-1. **Clone and Install**
+1. Install contract tooling at repo root:
 ```bash
 cd blockchain-ass3
 npm install
 ```
 
-2. **Environment Setup**
+2. Install backend dependencies:
 ```bash
-cp .env.example .env
-# Edit .env with your configuration
+cd backend
+npm install
 ```
 
-3. **Compile Contracts**
+3. Install frontend dependencies:
+```bash
+cd frontend
+npm install
+```
+
+### Environment
+
+Copy and configure environment variables for backend and frontend as needed:
+```bash
+cd blockchain-ass3
+cp .env.example .env
+```
+
+The backend expects:
+- `MONGO_URI`
+- `PINATA_API_KEY`
+- `PINATA_SECRET_API_KEY`
+- `FRONTEND_URL`
+
+### Compile contracts
+
 ```bash
 npm run compile
 ```
 
+## 🚀 Running the project
+
+### Start the backend
+
+```bash
+cd backend
+npm run start
+```
+
+### Start the frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+### Start a local Hardhat node
+
+```bash
+cd blockchain-ass3
+npm run localnode
+```
+
+### Deploy contracts
+
+```bash
+npm run deploy:localhost
+npm run deploy:polygon
+```
+
 ## 🧪 Testing
 
-### Run All Tests
+### Run contract tests
+
 ```bash
 npm test
 ```
 
-### Run Specific Test Suite
-```bash
-npx hardhat test test/MedicalRecords.test.js
-npx hardhat test test/MedicalRecords.security.test.js
-```
+### Coverage
 
-### Test Coverage
 ```bash
 npm run test:coverage
 ```
 
-### Test Suites
+## 🧠 How the key flows work
 
-**MedicalRecords.test.js** - Core functionality tests
-- Record creation and management
-- Access control with expiry
-- Record access permissions
-- Medicine verification
-- Reentrancy protection
-- Pausable functionality
-- Role management
-- Query functions
-- Audit logs
+### Patient upload flow
 
-**MedicalRecords.security.test.js** - Security & edge cases
-- Input validation
-- Access control security
-- Expiry time security
-- Record lifecycle
-- Multiple medicines handling
-- Concurrent operations
-- Medicine hash verification
-- Pause/resume operations
+1. The user connects MetaMask in the frontend.
+2. The frontend sends the medical file and metadata to the backend `/api/upload` endpoint.
+3. The backend encrypts the file and pins it to IPFS with Pinata.
+4. The backend returns the IPFS hash to the frontend.
+5. The frontend calls `addRecord(ipfsCid)` on the smart contract with the connected MetaMask wallet.
 
-## 📝 Deployment
+### Access control flow
 
-### Local Deployment (Hardhat Network)
+- Access grants are stored on-chain in `accessGrants[recordId]`.
+- Only the record owner can call `grantAccess` or `revokeAccess`.
+- `getRecord` requires a valid access grant for the caller.
+- Access entries support expiration and revocation.
 
-```bash
-# Start local node
-npm run localnode
+### Real-time consent flow
 
-# In another terminal, deploy
-npm run deploy:localhost
-```
+- Doctors can request access through the frontend.
+- Requests are saved in backend audit records.
+- Patients approve requests by signing MetaMask transactions to invoke `grantAccess`.
+- The backend can also log approvals and denials in MongoDB.
 
-### Polygon Mumbai Testnet Deployment
+### Medicine verification
 
-1. **Setup Private Key**
-```bash
-# Get Mumbai testnet ETH from faucet: https://faucet.polygon.technology/
-# Add private key to .env
-```
+Medicine verification is implemented in the backend using MongoDB `MedicineVerification` records. It is not stored in the Solidity contract in the current codebase.
 
-2. **Deploy**
-```bash
-npm run deploy:polygon
-```
+## 📄 Smart contract API
 
-3. **Verify on Block Explorer**
-```bash
-npx hardhat verify --network polygonMumbai <CONTRACT_ADDRESS>
-```
+### `addRecord(string _ipfsCid) → uint256`
+Create a new medical record and auto-grant the owner permanent access.
 
-## 🎯 API Functions
+### `grantAccess(uint256 _recordId, address _user, uint256 _expiryTime)`
+Grant access to another wallet. Pass `0` for no expiry.
 
-### Record Management
+### `revokeAccess(uint256 _recordId, address _user)`
+Revoke a previously granted access entry.
 
-#### `addRecord(address _patient, string memory _ipfsCid) → uint256`
-Create a new patient medical record
-- ✅ Only ADMIN
-- Returns: recordId
+### `getRecord(uint256 _recordId)`
+Returns the record only if the caller has valid access.
 
-#### `getRecord(uint256 _recordId) → PatientRecord`
-Retrieve a patient record (with permission check)
-- ✅ Requires valid access
+### `checkAccess(uint256 _recordId, address _user)`
+Check whether a wallet can access a record.
 
-#### `updateRecord(uint256 _recordId, string memory _newIpfsCid)`
-Update patient record IPFS CID
-- ✅ Only ADMIN  
-- Increments version
+### `getAccessCount(uint256 _recordId)`
+Return the number of access grant entries for the record.
 
-### Access Control
+## 📌 Notes
 
-#### `grantAccess(uint256 _recordId, address _user, uint256 _expiryTime, string memory _accessLevel)`
-Grant access to a record with optional expiry
-- ✅ Only ADMIN
-- `_expiryTime = 0` for perpetual access
-- `_accessLevel`: "read" or "read-write"
-
-#### `revokeAccess(uint256 _recordId, address _user)`
-Revoke access to a record
-- ✅ Only ADMIN
-
-#### `hasValidAccess(uint256 _recordId, address _user) → bool`
-Check if user has valid access to record
-- ✅ Public view function
-
-### Medicine Verification
-
-#### `verifyMedicine(uint256 _recordId, string memory _medicineName, string memory _qrCode, bytes32 _medicineHash) → uint256`
-Register and verify medicine for a record
-- ✅ Only DOCTOR with record access
-- Returns: medicineId
-
-#### `verifyMedicineHash(uint256 _medicineId, bytes32 _providedHash) → bool`
-Verify medicine authenticity using hash
-- ✅ Public view function
-
-#### `getMedicinesForRecord(uint256 _recordId) → uint256[]`
-Get all medicine IDs for a record
-
-### Audit Functions
-
-#### `getAuditTrail(uint256 _recordId) → AuditEntry[]`
-Retrieve complete audit trail for a record
-
-#### `getAuditTrailLength() → uint256`
-Get total number of audit entries
-
-## 📊 Contract ABI
-
-Extract ABI for frontend integration:
-
-```bash
-node scripts/extract-abi.js
-```
-
-This generates:
-- `frontend/MedicalRecords.abi.json` - JSON format
-- `frontend/MedicalRecords.abi.ts` - TypeScript export
-- `frontend/MedicalRecords.abi.js` - JavaScript export
-- `frontend/INTEGRATION_GUIDE.md` - Frontend integration guide
-
-### Frontend Integration Example
-
-```javascript
-import { ethers } from 'ethers';
-import { MEDICAL_RECORDS_ABI } from './MedicalRecords.abi.js';
-
-const contract = new ethers.Contract(
-  contractAddress,
-  MEDICAL_RECORDS_ABI,
-  signer
-);
-
-// Create record
-const tx = await contract.addRecord(patientAddress, ipfsCid);
-await tx.wait();
-
-// Listen to events
-contract.on('RecordCreated', (recordId, patient, ipfsCid) => {
-  console.log('Record created:', recordId);
-});
+- The contract is intentionally simple: it stores record metadata and access grants, not full documents.
+- Sensitive files are encrypted and kept off-chain on IPFS.
+- Audit logs and medicine verification are handled by the backend and MongoDB.
+- The frontend expects MetaMask on the configured Polygon testnet and uses `ethers.js` for signing.
 ```
 
 ## 📋 Events
